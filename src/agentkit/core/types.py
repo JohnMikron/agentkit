@@ -236,11 +236,18 @@ class Usage(BaseModel):
     cached_tokens: int = 0
 
     def __add__(self, other: "Usage") -> "Usage":
-        """Add two Usage objects together."""
+        """Add two Usage objects together.
+
+        The resulting total_tokens is recalculated from the summed
+        prompt/completion counts instead of simply adding the existing
+        `total_tokens` fields (which may be stale or zero).
+        """
+        prompt = self.prompt_tokens + other.prompt_tokens
+        completion = self.completion_tokens + other.completion_tokens
         return Usage(
-            prompt_tokens=self.prompt_tokens + other.prompt_tokens,
-            completion_tokens=self.completion_tokens + other.completion_tokens,
-            total_tokens=self.total_tokens + other.total_tokens,
+            prompt_tokens=prompt,
+            completion_tokens=completion,
+            total_tokens=prompt + completion,
             cached_tokens=self.cached_tokens + other.cached_tokens,
         )
 
@@ -380,36 +387,32 @@ AsyncToolFunction = Callable[..., Any]
 class ModelId(str, Enum):
     """Supported model identifiers."""
 
-    # OpenAI (2026 March)
-    GPT_5_3 = "gpt-5.3-chat-latest"
-    GPT_5_3_CODEX = "gpt-5.3-codex-latest"
-    GPT_5_2 = "gpt-5.2-instant"
-    GPT_5_1 = "gpt-5.1"
-    
-    # Retired OpenAI models (kept for backward compatibility, will warn in future)
+    # OpenAI
     GPT_4O = "gpt-4o"
     GPT_4O_MINI = "gpt-4o-mini"
-    O1 = "o1-preview"
+    GPT_4_TURBO = "gpt-4-turbo"
+    GPT_4 = "gpt-4"
+    O1 = "o1"
+    O1_MINI = "o1-mini"
+    O1_PRO = "o1-pro"
 
-    # Anthropic (2026 March)
-    CLAUDE_4_6_OPUS = "claude-4-6-opus-latest"
-    CLAUDE_4_6_SONNET = "claude-4-6-sonnet-latest"
-    CLAUDE_4_5_HAIKU = "claude-4-5-haiku-latest"
-    
-    # Retired Anthropic models
+    # Anthropic
     CLAUDE_3_5_SONNET = "claude-3-5-sonnet-latest"
+    CLAUDE_3_5_HAIKU = "claude-3-5-haiku-latest"
+    CLAUDE_3_OPUS = "claude-3-opus-latest"
 
-    # Google (2026 March)
-    GEMINI_3_1_PRO = "gemini-3.1-pro-preview"
-    GEMINI_3_1_FLASH = "gemini-3.1-flash-lite-preview"
-    GEMINI_3_DEEP_THINK = "gemini-3-deep-think"
+    # Google
+    GEMINI_2_PRO = "gemini-2.0-pro"
+    GEMINI_2_FLASH = "gemini-2.0-flash"
 
-    # Mistral (2026 March)
-    MISTRAL_LARGE_26 = "mistral-large-2601"
-    PIXTRAL_LARGE = "pixtral-large-latest"
+    # Mistral
+    MISTRAL_LARGE = "mistral-large-latest"
+    MISTRAL_SMALL = "mistral-small-latest"
+    CODESTRAL = "codestral-latest"
 
     # Local (via Ollama)
-    LLAMA_3_3 = "llama3.3"
     LLAMA_3_2 = "llama3.2"
+    LLAMA_3_1 = "llama3.1"
+    MISTRAL_7B = "mistral"
+    PHI_3 = "phi3"
     QWEN_2_5 = "qwen2.5"
-    DEEPSEEK_V3 = "deepseek-v3"

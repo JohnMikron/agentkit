@@ -41,7 +41,7 @@ class AnthropicProvider(LLMProvider):
 
     def __init__(
         self,
-        model: str = "claude-4-6-sonnet-latest",
+        model: str = "claude-3-5-sonnet-latest",
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         temperature: float = 0.7,

@@ -43,7 +43,7 @@ class LLMSettings(BaseSettings):
 
     # Default model configuration
     default_model: str = Field(
-        default=ModelId.GPT_5_3.value,
+        default=ModelId.GPT_4O_MINI.value,
         description="Default model to use",
     )
     default_provider: str = Field(

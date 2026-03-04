@@ -1,7 +1,7 @@
 """
 OpenAI provider for AgentKit.
 
-Supports GPT-5, GPT-4, o3, and any OpenAI-compatible API.
+Supports GPT-4, GPT-3.5, o1 models, and any OpenAI-compatible API.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class OpenAIProvider(LLMProvider):
 
     def __init__(
         self,
-        model: str = "gpt-5.3-chat-latest",
+        model: str = "gpt-4o-mini",
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         organization: Optional[str] = None,

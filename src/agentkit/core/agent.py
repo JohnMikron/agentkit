@@ -170,7 +170,7 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(default="agent", min_length=1, max_length=100)
-    model: str = Field(default="gpt-5.3-chat-latest")
+    model: str = Field(default="gpt-4o-mini")
     provider: Optional[str] = Field(default=None)
     system_prompt: Optional[str] = Field(default=None)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
@@ -485,9 +485,17 @@ class Agent:
         """
 
         def decorator(f: Callable[..., Any]) -> Tool:
+            # Only pass description if we have something meaningful; otherwise
+            # let Tool.__init__ infer it (avoids None validation issues).
+            desc_val: Optional[str] = None
+            if description is not None:
+                desc_val = description
+            elif f.__doc__:
+                desc_val = f.__doc__.strip().split("\n")[0]
+
             t = Tool(
                 name=name or f.__name__,
-                description=description or (f.__doc__.strip().split("\n")[0] if f.__doc__ else None),
+                **({"description": desc_val} if desc_val is not None else {}),
                 func=f,
                 strict=strict,
             )
@@ -623,39 +631,40 @@ class Agent:
         return results
 
     async def _aexecute_tool_calls(self, tool_calls: List[ToolCall]) -> List[ToolResult]:
-        """Execute tool calls concurrently."""
-        async def _execute_single(tc: ToolCall) -> ToolResult:
+        """Execute tool calls asynchronously."""
+        results = []
+
+        for tc in tool_calls:
             args = tc.parse_arguments()
+
             self._emit(
                 EventType.TOOL_CALL_START,
                 {"tool_name": tc.name, "arguments": args, "tool_call_id": tc.id},
             )
+
             try:
                 result = await self._tools.aexecute(tc.name, args)
-                res = ToolResult(
+                results.append(ToolResult(
                     tool_call_id=tc.id,
                     name=tc.name,
                     content=result.content,
                     is_error=result.is_error,
                     execution_time_ms=result.execution_time_ms,
-                )
+                ))
             except ToolError as e:
-                res = ToolResult(
+                results.append(ToolResult(
                     tool_call_id=tc.id,
                     name=tc.name,
                     content=f"Error: {e.message}",
                     is_error=True,
-                )
-            
+                ))
+
             self._emit(
                 EventType.TOOL_CALL_END,
-                {"tool_name": tc.name, "tool_call_id": tc.id, "is_error": res.is_error},
+                {"tool_name": tc.name, "tool_call_id": tc.id, "is_error": results[-1].is_error},
             )
-            return res
 
-        # Run all tool calls concurrently
-        results = await asyncio.gather(*[_execute_single(tc) for tc in tool_calls])
-        return list(results)
+        return results
 
     def run(
         self,

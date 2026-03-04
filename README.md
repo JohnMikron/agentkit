@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="https://github.com/agentkit-dev/agentkit">
-    <img src="https://img.shields.io/badge/version-1.1.0-blue.svg" alt="Version">
+  <a href="https://github.com/JohnMikron/agentkit">
+    <img src="https://img.shields.io/badge/version-1.1.1-blue.svg" alt="Version">
   </a>
   <a href="https://www.python.org/downloads/">
     <img src="https://img.shields.io/badge/python-3.10+-green.svg" alt="Python">
@@ -11,8 +11,8 @@
   <a href="https://pypi.org/project/agentkit/">
     <img src="https://img.shields.io/pypi/dm/agentkit.svg" alt="Downloads">
   </a>
-  <a href="https://github.com/agentkit-dev/agentkit/actions">
-    <img src="https://img.shields.io/github/actions/workflow/status/agentkit-dev/agentkit/ci.yml?branch=main" alt="CI">
+  <a href="https://github.com/JohnMikron/agentkit/actions">
+    <img src="https://img.shields.io/github/actions/workflow/status/JohnMikron/agentkit/ci.yml?branch=main" alt="CI">
   </a>
 </p>
 
@@ -478,7 +478,7 @@ MIT License - see [LICENSE](LICENSE).
 </p>
 
 <p align="center">
-  <a href="https://github.com/agentkit-dev/agentkit">GitHub</a> •
+  <a href="https://github.com/JohnMikron/agentkit">GitHub</a> •
   <a href="https://agentkit.dev">Documentation</a> •
   <a href="https://pypi.org/project/agentkit/">PyPI</a> •
   <a href="https://discord.gg/agentkit">Discord</a>

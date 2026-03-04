@@ -78,7 +78,7 @@ class TestAgentTools:
 
     def test_add_tool_instance(self):
         """Test adding a Tool instance directly."""
-        from agentkit.core.tools import Tool
+        from agentkit.core.tools import Tool, tool
 
         agent = Agent("test")
 
@@ -91,7 +91,7 @@ class TestAgentTools:
 
     def test_add_tools_chaining(self):
         """Test adding multiple tools with chaining."""
-        from agentkit.core.tools import Tool
+        from agentkit.core.tools import Tool, tool
 
         agent = Agent("test")
 
