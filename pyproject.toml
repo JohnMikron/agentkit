@@ -126,12 +126,9 @@ agentkit = "agentkit.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/JohnMikron/agentkit"
-Documentation = "https://agentkit.dev"
 Repository = "https://github.com/JohnMikron/agentkit.git"
 Issues = "https://github.com/JohnMikron/agentkit/issues"
 Changelog = "https://github.com/JohnMikron/agentkit/blob/main/CHANGELOG.md"
-Discord = "https://discord.gg/agentkit"
-Twitter = "https://twitter.com/agentkitdev"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentkit"]

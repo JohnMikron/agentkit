@@ -478,8 +478,5 @@ MIT License - see [LICENSE](LICENSE).
 </p>
 
 <p align="center">
-  <a href="https://github.com/JohnMikron/agentkit">GitHub</a> •
-  <a href="https://agentkit.dev">Documentation</a> •
-  <a href="https://pypi.org/project/agentkit/">PyPI</a> •
-  <a href="https://discord.gg/agentkit">Discord</a>
+  <a href="https://github.com/JohnMikron/agentkit">GitHub</a>
 </p>

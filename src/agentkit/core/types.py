@@ -387,7 +387,12 @@ AsyncToolFunction = Callable[..., Any]
 class ModelId(str, Enum):
     """Supported model identifiers."""
 
-    # OpenAI
+    # OpenAI – current and legacy
+    GPT_5_3 = "gpt-5.3-chat-latest"
+    GPT_5_3_CODEX = "gpt-5.3-codex-latest"
+    GPT_5_2 = "gpt-5.2-instant"
+    GPT_5_1 = "gpt-5.1"
+    GPT_5_4 = "gpt-5.4"  # placeholder for next-gen
     GPT_4O = "gpt-4o"
     GPT_4O_MINI = "gpt-4o-mini"
     GPT_4_TURBO = "gpt-4-turbo"
@@ -396,12 +401,18 @@ class ModelId(str, Enum):
     O1_MINI = "o1-mini"
     O1_PRO = "o1-pro"
 
-    # Anthropic
+    # Anthropic – current and legacy
+    CLAUDE_4_6_OPUS = "claude-4-6-opus-latest"
+    CLAUDE_4_6_SONNET = "claude-4-6-sonnet-latest"
+    CLAUDE_4_5_HAIKU = "claude-4-5-haiku-latest"
     CLAUDE_3_5_SONNET = "claude-3-5-sonnet-latest"
     CLAUDE_3_5_HAIKU = "claude-3-5-haiku-latest"
     CLAUDE_3_OPUS = "claude-3-opus-latest"
 
-    # Google
+    # Google – current and experimental
+    GEMINI_3_1_PRO = "gemini-3.1-pro"
+    GEMINI_3_1_FLASH = "gemini-3.1-flash"
+    GEMINI_3_DEEP_THINK = "gemini-3-deep-think"
     GEMINI_2_PRO = "gemini-2.0-pro"
     GEMINI_2_FLASH = "gemini-2.0-flash"
 
