@@ -273,6 +273,19 @@ class ToolValidationError(ToolError):
         self.validation_errors = validation_errors
 
 
+class RequireApproval(ToolError):
+    """Raised when Human-in-the-Loop approval is required but not granted."""
+
+    def __init__(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(
+            message=f"Execution of '{tool_name}' requires human approval",
+            tool_name=tool_name,
+            code="REQUIRE_APPROVAL",
+            details={"arguments": arguments},
+        )
+        self.arguments = arguments
+
+
 class ToolTimeoutError(ToolError):
     """Raised when tool execution times out."""
 

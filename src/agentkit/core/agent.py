@@ -47,6 +47,14 @@ from agentkit.core.types import (
     ToolResult,
     Usage,
 )
+from agentkit.providers import (
+    AnthropicProvider,
+    GoogleProvider,
+    MistralProvider,
+    MockProvider,
+    OllamaProvider,
+    OpenAIProvider,
+)
 
 logger = structlog.get_logger()
 
@@ -227,6 +235,7 @@ class Agent:
         system_prompt: Optional[str] = None,
         config: Optional[AgentConfig] = None,
         settings: Optional[Settings] = None,
+        approval_handler: Optional[Callable[[ToolCall], bool]] = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -239,6 +248,7 @@ class Agent:
             system_prompt: System prompt for the agent
             config: Full configuration object (overrides other params)
             settings: Global settings object
+            approval_handler: Optional callback for Human-in-the-Loop tool approval
             **kwargs: Additional configuration options
         """
         # Use provided config or create from parameters
@@ -255,12 +265,13 @@ class Agent:
 
         self.settings = settings or get_settings()
 
-        # Initialize components
+        # Components
         self._tools = ToolRegistry()
         self._hooks = AgentHooks()
         self._provider = None
         self._state = AgentState.IDLE
         self._cancelled = False
+        self._approval_handler = approval_handler
 
         # Initialize memory
         if self.config.memory_enabled:
@@ -318,113 +329,104 @@ class Agent:
             self._provider = self._create_provider()
         return self._provider
 
-    def _create_provider(self):
+    def _create_provider(self) -> LLMProvider:
         """Create the appropriate LLM provider based on model name."""
+        import os
         model = self.config.model
 
+        # Helper to decide if we should fallback to mock
+        def get_fallback_provider(provider_type: str, err: Exception) -> LLMProvider:
+            if os.environ.get("AGENTKIT_DEMO_MODE") == "true":
+                logger.warning(f"{provider_type} API key missing, falling back to MockProvider")
+                return MockProvider(model=f"mock-{model}")
+            raise err
+
         # Check for explicit provider prefix
-        if model.startswith("openai:"):
-            from agentkit.providers.openai import OpenAIProvider
+        if ":" in model:
+            provider_name, model_name = model.split(":", 1)
+            if provider_name == "openai":
+                from agentkit.providers.openai import OpenAIProvider
+                try:
+                    return OpenAIProvider(model=model_name, api_key=self.settings.llm.openai_api_key, **self._provider_kwargs())
+                except MissingAPIKeyError as e:
+                    return get_fallback_provider("OpenAI", e)
+            
+            if provider_name == "anthropic" or provider_name == "claude":
+                from agentkit.providers.anthropic import AnthropicProvider
+                try:
+                    return AnthropicProvider(model=model_name, api_key=self.settings.llm.anthropic_api_key, **self._provider_kwargs())
+                except MissingAPIKeyError as e:
+                    return get_fallback_provider("Anthropic", e)
 
-            return OpenAIProvider(
-                model=model[7:],
-                api_key=self.settings.llm.openai_api_key,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-            )
+            if provider_name == "google" or provider_name == "gemini":
+                from agentkit.providers.google import GoogleProvider
+                try:
+                    return GoogleProvider(model=model_name, api_key=self.settings.llm.google_api_key, **self._provider_kwargs())
+                except MissingAPIKeyError as e:
+                    return get_fallback_provider("Google", e)
 
-        if model.startswith("anthropic:") or model.startswith("claude:"):
-            from agentkit.providers.anthropic import AnthropicProvider
+            if provider_name == "mistral":
+                from agentkit.providers.mistral import MistralProvider
+                try:
+                    return MistralProvider(model=model_name, api_key=self.settings.llm.mistral_api_key, **self._provider_kwargs())
+                except MissingAPIKeyError as e:
+                    return get_fallback_provider("Mistral", e)
 
-            actual_model = model.split(":", 1)[1]
-            return AnthropicProvider(
-                model=actual_model,
-                api_key=self.settings.llm.anthropic_api_key,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-            )
+            if provider_name in ("local", "ollama"):
+                from agentkit.providers.ollama import OllamaProvider
+                return OllamaProvider(model=model_name, **self._provider_kwargs())
 
-        if model.startswith("google:") or model.startswith("gemini:"):
-            from agentkit.providers.google import GoogleProvider
-
-            actual_model = model.split(":", 1)[1]
-            return GoogleProvider(
-                model=actual_model,
-                api_key=self.settings.llm.google_api_key,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-            )
-
-        if model.startswith("mistral:"):
-            from agentkit.providers.mistral import MistralProvider
-
-            return MistralProvider(
-                model=model[8:],
-                api_key=self.settings.llm.mistral_api_key,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-            )
-
-        if model.startswith("local:") or model.startswith("ollama:"):
-            from agentkit.providers.ollama import OllamaProvider
-
-            actual_model = model.split(":", 1)[1]
-            return OllamaProvider(
-                model=actual_model,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-            )
+            if provider_name == "mock":
+                return MockProvider(model=model_name, **self._provider_kwargs())
 
         # Auto-detect provider from model name
-        if any(x in model.lower() for x in ["gpt", "o1", "o3"]):
+        model_lower = model.lower()
+        if any(x in model_lower for x in ["gpt", "o1", "o3"]):
             from agentkit.providers.openai import OpenAIProvider
+            try:
+                return OpenAIProvider(model=model, api_key=self.settings.llm.openai_api_key, **self._provider_kwargs())
+            except MissingAPIKeyError as e:
+                return get_fallback_provider("OpenAI", e)
 
-            return OpenAIProvider(
-                model=model,
-                api_key=self.settings.llm.openai_api_key,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-            )
-
-        if "claude" in model.lower():
+        if "claude" in model_lower:
             from agentkit.providers.anthropic import AnthropicProvider
+            try:
+                return AnthropicProvider(model=model, api_key=self.settings.llm.anthropic_api_key, **self._provider_kwargs())
+            except MissingAPIKeyError as e:
+                return get_fallback_provider("Anthropic", e)
 
-            return AnthropicProvider(
-                model=model,
-                api_key=self.settings.llm.anthropic_api_key,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-            )
-
-        if "gemini" in model.lower():
+        if "gemini" in model_lower:
             from agentkit.providers.google import GoogleProvider
+            try:
+                return GoogleProvider(model=model, api_key=self.settings.llm.google_api_key, **self._provider_kwargs())
+            except MissingAPIKeyError as e:
+                return get_fallback_provider("Google", e)
 
-            return GoogleProvider(
-                model=model,
-                api_key=self.settings.llm.google_api_key,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-            )
-
-        if "mistral" in model.lower() or "codestral" in model.lower():
+        if "mistral" in model_lower or "codestral" in model_lower:
             from agentkit.providers.mistral import MistralProvider
+            try:
+                return MistralProvider(model=model, api_key=self.settings.llm.mistral_api_key, **self._provider_kwargs())
+            except MissingAPIKeyError as e:
+                return get_fallback_provider("Mistral", e)
+        
+        if "llama" in model_lower or "phi" in model_lower or "qwen" in model_lower:
+            from agentkit.providers.ollama import OllamaProvider
+            return OllamaProvider(model=model, **self._provider_kwargs())
 
-            return MistralProvider(
-                model=model,
-                api_key=self.settings.llm.mistral_api_key,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
-            )
-
-        # Default to OpenAI-compatible
+        # Default to OpenAI
         from agentkit.providers.openai import OpenAIProvider
+        try:
+            return OpenAIProvider(model=model, api_key=self.settings.llm.openai_api_key, **self._provider_kwargs())
+        except MissingAPIKeyError as e:
+            return get_fallback_provider("OpenAI", e)
 
-        return OpenAIProvider(
-            model=model,
-            api_key=self.settings.llm.openai_api_key,
-            temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens,
-        )
+    def _provider_kwargs(self) -> Dict[str, Any]:
+        """Get standard provider kwargs."""
+        return {
+            "temperature": self.config.temperature,
+            "max_tokens": self.config.max_tokens,
+            "timeout": self.config.timeout,
+        }
 
     def _set_state(self, new_state: AgentState) -> None:
         """Update agent state and emit event."""
@@ -605,6 +607,19 @@ class Agent:
                 {"tool_name": tc.name, "arguments": args, "tool_call_id": tc.id},
             )
 
+            if self._approval_handler and not self._approval_handler(tc):
+                results.append(ToolResult(
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                    content="Error: Human approval denied",
+                    is_error=True,
+                ))
+                self._emit(
+                    EventType.TOOL_CALL_END,
+                    {"tool_name": tc.name, "tool_call_id": tc.id, "is_error": True},
+                )
+                continue
+
             try:
                 result = self._tools.execute(tc.name, args)
                 results.append(ToolResult(
@@ -641,6 +656,19 @@ class Agent:
                 EventType.TOOL_CALL_START,
                 {"tool_name": tc.name, "arguments": args, "tool_call_id": tc.id},
             )
+
+            if self._approval_handler and not self._approval_handler(tc):
+                results.append(ToolResult(
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                    content="Error: Human approval denied",
+                    is_error=True,
+                ))
+                self._emit(
+                    EventType.TOOL_CALL_END,
+                    {"tool_name": tc.name, "tool_call_id": tc.id, "is_error": True},
+                )
+                continue
 
             try:
                 result = await self._tools.aexecute(tc.name, args)
@@ -685,6 +713,51 @@ class Agent:
         """
         result = asyncio.run(self.arun(prompt, tools=tools, **kwargs))
         return result.content
+        
+    def run_structured(
+        self,
+        prompt: str,
+        response_model: Type[BaseModel],
+        tools: Optional[List[Tool]] = None,
+        **kwargs: Any,
+    ) -> BaseModel:
+        """
+        Run the agent synchronously and enforce a structured Pydantic output.
+        """
+        return asyncio.run(self.arun_structured(prompt, response_model, tools=tools, **kwargs))
+
+    async def arun_structured(
+        self,
+        prompt: str,
+        response_model: Type[BaseModel],
+        tools: Optional[List[Tool]] = None,
+        **kwargs: Any,
+    ) -> BaseModel:
+        """
+        Run the agent asynchronously and enforce a structured Pydantic output.
+        Falls back to JSON prompting and validation if the provider lacks native structured support.
+        """
+        import json
+        
+        # We append a structured output instruction to the prompt context.
+        schema = response_model.model_json_schema()
+        structured_prompt = f"{prompt}\n\nYou MUST respond entirely in valid JSON format matching this schema:\n{json.dumps(schema, indent=2)}"
+        
+        result = await self.arun(structured_prompt, tools=tools, **kwargs)
+        
+        # Clean the output in case it wrapped in markdown code blocks
+        clean_json = result.content.strip()
+        if clean_json.startswith("```json"):
+            clean_json = clean_json[7:]
+        if clean_json.startswith("```"):
+            clean_json = clean_json[3:]
+        if clean_json.endswith("```"):
+            clean_json = clean_json[:-3]
+            
+        try:
+            return response_model.model_validate_json(clean_json.strip())
+        except Exception as e:
+            raise AgentError(f"Failed to parse structured output: {str(e)}\nRaw Response: {result.content}")
 
     async def arun(
         self,

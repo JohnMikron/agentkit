@@ -321,4 +321,9 @@ class OpenAIProvider(LLMProvider):
 
     def __del__(self) -> None:
         """Clean up HTTP clients."""
-        self._client.close()
+        if hasattr(self, "_client"):
+            self._client.close()
+        if hasattr(self, "_async_client"):
+            # Note: Close is async, cannot comfortably await in __del__
+            # but httpx handles most cleanup if already closed or during gc
+            pass

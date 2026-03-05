@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/JohnMikron/agentkit">
-    <img src="https://img.shields.io/badge/version-1.1.1-blue.svg" alt="Version">
+    <img src="https://img.shields.io/badge/version-1.3.0-blue.svg" alt="Version">
   </a>
   <a href="https://www.python.org/downloads/">
     <img src="https://img.shields.io/badge/python-3.10+-green.svg" alt="Python">
@@ -8,11 +8,8 @@
   <a href="https://opensource.org/licenses/MIT">
     <img src="https://img.shields.io/badge/license-MIT-orange.svg" alt="License">
   </a>
-  <a href="https://pypi.org/project/agentkit/">
-    <img src="https://img.shields.io/pypi/dm/agentkit.svg" alt="Downloads">
-  </a>
-  <a href="https://github.com/JohnMikron/agentkit/actions">
-    <img src="https://img.shields.io/github/actions/workflow/status/JohnMikron/agentkit/ci.yml?branch=main" alt="CI">
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/license-MIT-orange.svg" alt="License">
   </a>
 </p>
 
@@ -42,12 +39,13 @@
 | **Multi-LLM support** | Limited | Limited | Microsoft-focused | Good | **Excellent** |
 | **Local models** | Complex | Complex | No | Medium | **One-line** |
 | **MCP support** | No | No | No | No | **Yes** |
-| **Memory options** | Basic | Basic | Basic | Basic | **Advanced** |
+| **Swarm Handoffs** | Manual | Basic | Yes | No | **Native** |
+| **Structured Output** | Medium | No | No | Good | **Automatic** |
+| **HITL Approval** | Manual | Basic | Manual | No | **Built-in** |
+| **Memory options** | Basic | Basic | Basic | Basic | **SQLite/Redis/Vector** |
 | **Debugging tools** | Complex | Limited | Limited | Good | **Built-in** |
 | **Streaming** | Yes | No | No | Yes | **Yes** |
 | **Async support** | Yes | No | Yes | Yes | **Yes** |
-| **Production ready** | Medium | Medium | Medium | Good | **Enterprise** |
-
 ---
 
 ## 📦 Installation
@@ -148,6 +146,51 @@ def log_result(event):
 def log_response(event):
     print(f"💭 Response received")
 ```
+### 🐝 Swarm Orchestration (Phase 2)
+
+Dynamic agent handoffs without static graphs or workflows.
+
+```python
+from agentkit import Agent, Swarm
+
+triage = Agent("Triage", system_prompt="Triage user requests.")
+billing = Agent("Billing", system_prompt="Handle billing issues.")
+
+swarm = Swarm(name="support_swarm")
+swarm.add_agent(triage)
+swarm.add_agent(billing)
+
+# Agents automatically get 'transfer_to_Billing' tools!
+result = await swarm.run("I need a refund")
+```
+
+### 🧱 Structured Outputs (Phase 2)
+
+Enforce Pydantic models for guaranteed data structures.
+
+```python
+from pydantic import BaseModel
+
+class UserProfile(BaseModel):
+    name: str
+    age: int
+
+user = await agent.run_structured("Extract John, 30", UserProfile)
+print(user.name) # Guaranteed string 'John'
+```
+
+### 🛡️ Human-in-the-Loop (Phase 2)
+
+Enterprise safety with built-in approval gates.
+
+```python
+def my_approval(tool_call):
+    if tool_call.name == "delete_database":
+        return input(f"Confirm {tool_call.name}? (y/n)") == "y"
+    return True
+
+agent = Agent("admin", approval_handler=my_approval)
+```
 
 ---
 
@@ -185,7 +228,14 @@ agent = Agent("assistant", memory=True)
 # Persistent file storage
 agent = Agent("assistant", memory=True, memory_file="chat.json")
 
-# Redis (distributed)
+# Vector memory (semantic search / RAG)
+from agentkit.core.memory import VectorStorage, Memory
+
+storage = VectorStorage(collection_name="my_docs")
+memory = Memory(storage=storage)
+agent = Agent("assistant", memory=memory)
+
+# Multi-backend: Redis (distributed)
 from agentkit.core.memory import RedisStorage, Memory
 
 storage = RedisStorage(redis_url="redis://localhost:6379")
@@ -209,6 +259,14 @@ agent = Agent("assistant", model="anthropic:claude-4-6-opus")
 agent = Agent("assistant", model="google:gemini-3.1-pro")
 agent = Agent("assistant", model="mistral:mistral-large-2601")
 agent = Agent("assistant", model="local:llama3.3")
+
+# Mock Provider (for testing/demos, no API key needed)
+agent = Agent("assistant", model="mock:my-model")
+
+# Demo Mode (automatic fallback to mock if API key is missing)
+import os
+os.environ["AGENTKIT_DEMO_MODE"] = "true"
+agent = Agent("assistant", model="gpt-5.3-chat-latest") # Works without API key!
 ```
 
 ### 🔍 Built-in Debugging
@@ -303,8 +361,14 @@ agentkit models --provider ollama
 # Test connection
 agentkit test --model gpt-4o
 
-# Show info
-agentkit info
+# Reading PDFs (requires pymupdf)
+from agentkit.utils.pdf import read_pdf
+agent.add_tool(read_pdf)
+
+# Web Research (WebAgent)
+from agentkit import WebAgent
+web_agent = WebAgent("researcher")
+result = web_agent.run("What are the latest AI trends in 2026?")
 ```
 
 ---

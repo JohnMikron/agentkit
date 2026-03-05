@@ -11,10 +11,23 @@ from __future__ import annotations
 
 import asyncio
 import json
+from agentkit.mcp.client import MCPClient, MCPToolDefinition, MCPResourceDefinition, MCPPromptDefinition
+from agentkit.mcp.server import MCPServer, ToolCallback, ResourceCallback, PromptCallback
 from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+__all__ = [
+    "MCPClient",
+    "MCPServer",
+    "MCPToolDefinition",
+    "MCPResourceDefinition",
+    "MCPPromptDefinition",
+    "ToolCallback",
+    "ResourceCallback",
+    "PromptCallback",
+    "load_mcp_tools"
+]
 
 class MCPToolDefinition(BaseModel):
     """MCP tool definition."""
@@ -493,3 +506,44 @@ class MCPClient:
             self._process.terminate()
             await self._process.wait()
             self._process = None
+
+
+async def load_mcp_tools(command: str, args: Optional[List[str]] = None) -> List["Tool"]:
+    """
+    Convenience function to connect to an MCP server, read its tools,
+    and return them as native AgentKit Tool objects.
+
+    Args:
+        command: The command to run the MCP server (e.g., "npx", "python")
+        args: Arguments to the command (e.g., ["-y", "@modelcontextprotocol/server-everything"])
+
+    Returns:
+        A list of AgentKit Tool instances ready to be added to an Agent.
+    """
+    from agentkit.core.tools import Tool
+    
+    client = MCPClient()
+    await client.connect(command, args)
+    mcp_tools = await client.list_tools()
+
+    native_tools = []
+    
+    for mcp_tool in mcp_tools:
+        # We need to capture the current tool context correctly in the lambda
+        def make_handler(tool_name: str):
+            async def handler(**kwargs) -> str:
+                return await client.call_tool(tool_name, kwargs)
+            return handler
+
+        native_tools.append(
+            Tool(
+                name=mcp_tool.name,
+                description=mcp_tool.description,
+                func=make_handler(mcp_tool.name),
+            )
+        )
+        # Note: Ideally, `Tool` would natively accept arbitrary JSON Schema constraints
+        # without inspecting a Python function signature. Since AgentKit relies on standard
+        # Pydantic/inspect parsing, advanced MCP schemas might degrade gracefully.
+        
+    return native_tools

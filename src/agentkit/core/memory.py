@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
@@ -419,6 +420,248 @@ class RedisStorage(MemoryStorage[MemoryEntry]):
         query_lower = query.lower()
         results = [e for e in entries if query_lower in e.content.lower()]
         return results[-limit:]
+
+
+class VectorStorage(MemoryStorage[MemoryEntry]):
+    """
+    Vector-based storage backend using ChromaDB.
+
+    Provides semantic search capabilities using embeddings.
+    Best for RAG (Retrieval Augmented Generation).
+
+    Requires: pip install chromadb sentence-transformers
+    """
+
+    def __init__(
+        self,
+        collection_name: str = "agentkit_memory",
+        persist_directory: Optional[str] = None,
+        embedding_model: str = "all-MiniLM-L6-v2",
+    ) -> None:
+        """
+        Initialize Vector storage.
+
+        Args:
+            collection_name: Name of the ChromaDB collection
+            persist_directory: Optional directory for persistence
+            embedding_model: Name of the sentence-transformers model
+        """
+        try:
+            import chromadb
+            from sentence_transformers import SentenceTransformer
+        except ImportError:
+            raise ImportError(
+                "Vector storage requires 'chromadb' and 'sentence-transformers' packages: "
+                "pip install chromadb sentence-transformers"
+            )
+
+        self._client = chromadb.PersistentClient(path=persist_directory) if persist_directory else chromadb.EphemeralClient()
+        self._model = SentenceTransformer(embedding_model)
+        self._collection = self._client.get_or_create_collection(name=collection_name)
+
+    def save(self, entry: MemoryEntry) -> str:
+        """Save a memory entry with its embedding."""
+        embedding = self._model.encode(entry.content).tolist()
+        
+        self._collection.add(
+            ids=[entry.id],
+            embeddings=[embedding],
+            documents=[entry.content],
+            metadatas=[{**entry.metadata, "role": entry.role, "timestamp": entry.timestamp.isoformat()}],
+        )
+        return entry.id
+
+    def load(self, limit: Optional[int] = None) -> List[MemoryEntry]:
+        """Load memory entries (ordered by timestamp)."""
+        results = self._collection.get()
+        entries = []
+        
+        for i in range(len(results["ids"])):
+            metadata = results["metadatas"][i]
+            entries.append(MemoryEntry(
+                id=results["ids"][i],
+                role=metadata.get("role", "user"),
+                content=results["documents"][i],
+                timestamp=datetime.fromisoformat(metadata["timestamp"]),
+                metadata={k: v for k, v in metadata.items() if k not in ("role", "timestamp")},
+            ))
+            
+        # Sort by timestamp
+        entries.sort(key=lambda x: x.timestamp)
+        if limit:
+            return entries[-limit:]
+        return entries
+
+    def get(self, entry_id: str) -> Optional[MemoryEntry]:
+        """Get a specific entry by ID."""
+        result = self._collection.get(ids=[entry_id])
+        if not result["ids"]:
+            return None
+            
+        metadata = result["metadatas"][0]
+        return MemoryEntry(
+            id=result["ids"][0],
+            role=metadata.get("role", "user"),
+            content=result["documents"][0],
+            timestamp=datetime.fromisoformat(metadata["timestamp"]),
+            metadata={k: v for k, v in metadata.items() if k not in ("role", "timestamp")},
+        )
+
+    def delete(self, entry_id: str) -> bool:
+        """Delete an entry by ID."""
+        self._collection.delete(ids=[entry_id])
+        return True
+
+    def clear(self) -> None:
+        """Clear all entries."""
+        self._client.delete_collection(self._collection.name)
+        self._collection = self._client.create_collection(self._collection.name)
+
+    def count(self) -> int:
+        """Get the number of stored entries."""
+        return self._collection.count()
+
+    def search(self, query: str, limit: int = 10) -> List[MemoryEntry]:
+        """Search for entries by semantic similarity."""
+        query_embedding = self._model.encode(query).tolist()
+        results = self._collection.query(
+            query_embeddings=[query_embedding],
+            n_results=limit,
+        )
+        
+        entries = []
+        for i in range(len(results["ids"][0])):
+            metadata = results["metadatas"][0][i]
+            entries.append(MemoryEntry(
+                id=results["ids"][0][i],
+                role=metadata.get("role", "user"),
+                content=results["documents"][0][i],
+                timestamp=datetime.fromisoformat(metadata["timestamp"]),
+                metadata={k: v for k, v in metadata.items() if k not in ("role", "timestamp")},
+            ))
+        return entries
+
+
+class SQLiteStorage(MemoryStorage[MemoryEntry]):
+    """
+    SQLite-based storage backend.
+
+    Provides reliable, concurrent, zero-dependency persistent memory.
+    Best for production agents that need persistent memory without external services.
+    
+    Example:
+        storage = SQLiteStorage("agent_memory.db")
+        memory = Memory(storage=storage)
+        agent = Agent("assistant", memory=memory)
+    """
+
+    def __init__(self, db_path: str = "agent_memory.db") -> None:
+        """
+        Initialize SQLite storage.
+        
+        Args:
+            db_path: Path to the SQLite database file
+        """
+        import sqlite3
+        self.db_path = db_path
+        self._init_db()
+
+    def _get_connection(self):
+        import sqlite3
+        return sqlite3.connect(self.db_path)
+
+    def _init_db(self):
+        with self._get_connection() as conn:
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS memory_entries (
+                    id TEXT PRIMARY KEY,
+                    role TEXT,
+                    content TEXT,
+                    timestamp TEXT,
+                    metadata TEXT
+                )
+            ''')
+            conn.commit()
+
+    def save(self, entry: MemoryEntry) -> str:
+        with self._get_connection() as conn:
+            conn.execute('''
+                INSERT OR REPLACE INTO memory_entries (id, role, content, timestamp, metadata)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (
+                entry.id,
+                entry.role,
+                entry.content,
+                entry.timestamp.isoformat(),
+                json.dumps(entry.metadata)
+            ))
+            conn.commit()
+        return entry.id
+
+    def load(self, limit: Optional[int] = None) -> List[MemoryEntry]:
+        query = "SELECT id, role, content, timestamp, metadata FROM memory_entries ORDER BY timestamp ASC"
+        if limit is not None:
+            # Get the last N rows, but keep them in ascending order
+            query = f"SELECT * FROM (SELECT id, role, content, timestamp, metadata FROM memory_entries ORDER BY timestamp DESC LIMIT {limit}) ORDER BY timestamp ASC"
+            
+        entries = []
+        with self._get_connection() as conn:
+            cursor = conn.execute(query)
+            for row in cursor:
+                entries.append(MemoryEntry(
+                    id=row[0],
+                    role=row[1],
+                    content=row[2],
+                    timestamp=datetime.fromisoformat(row[3]),
+                    metadata=json.loads(row[4])
+                ))
+        return entries
+
+    def get(self, entry_id: str) -> Optional[MemoryEntry]:
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT id, role, content, timestamp, metadata FROM memory_entries WHERE id = ?", (entry_id,))
+            row = cursor.fetchone()
+            if row:
+                return MemoryEntry(
+                    id=row[0],
+                    role=row[1],
+                    content=row[2],
+                    timestamp=datetime.fromisoformat(row[3]),
+                    metadata=json.loads(row[4])
+                )
+        return None
+
+    def delete(self, entry_id: str) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.execute("DELETE FROM memory_entries WHERE id = ?", (entry_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def clear(self) -> None:
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM memory_entries")
+            conn.commit()
+
+    def count(self) -> int:
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT COUNT(*) FROM memory_entries")
+            return cursor.fetchone()[0]
+
+    def search(self, query: str, limit: int = 10) -> List[MemoryEntry]:
+        query_lower = f"%{query.lower()}%"
+        sql = "SELECT id, role, content, timestamp, metadata FROM memory_entries WHERE LOWER(content) LIKE ? ORDER BY timestamp DESC LIMIT ?"
+        entries = []
+        with self._get_connection() as conn:
+            cursor = conn.execute(sql, (query_lower, limit))
+            for row in reversed(cursor.fetchall()):
+                entries.append(MemoryEntry(
+                    id=row[0],
+                    role=row[1],
+                    content=row[2],
+                    timestamp=datetime.fromisoformat(row[3]),
+                    metadata=json.loads(row[4])
+                ))
+        return entries
 
 
 class Memory:

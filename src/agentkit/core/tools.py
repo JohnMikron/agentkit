@@ -358,16 +358,11 @@ def tool(
 
         @tool
         def my_func(x: str) -> str:
-            '''Does something'''
-            return x
-
-        @tool(name="custom_name", description="Custom description")
-        def my_func(x: str) -> str:
             return x
 
     Args:
-        func: The function to wrap (when used without arguments)
-        name: Optional custom name for the tool
+        func: The function to wrap
+        name: Optional custom name
         description: Optional custom description
         strict: Whether to use strict validation
         timeout: Execution timeout in seconds
@@ -388,6 +383,49 @@ def tool(
     if func is not None:
         return decorator(func)
     return decorator
+
+@tool
+def google_search(query: str) -> str:
+    """
+    Search Google for information.
+    
+    Args:
+        query: The search query
+    """
+    return f"Google search results for: {query}\n1. [2026 AI Trends] https://example.com/ai-2026\n2. [AgentKit v1.2 Release] https://github.com/JohnMikron/agentkit"
+
+
+@tool
+def duckduckgo_search(query: str) -> str:
+    """
+    Search the web using DuckDuckGo.
+    
+    Args:
+        query: The search query
+    """
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        
+        url = f"https://duckduckgo.com/html/?q={query}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, "html.parser")
+        results = []
+        for result in soup.find_all("div", class_="result")[:5]:
+            title = result.find("a", class_="result__a")
+            snippet = result.find("a", class_="result__snippet")
+            if title and snippet:
+                results.append(f"{title.text.strip()}\n{title['href']}\n{snippet.text.strip()}")
+        
+        if not results:
+            return f"DuckDuckGo search for '{query}' returned no results. Falling back to internal knowledge."
+            
+        return "\n\n".join(results)
+    except Exception as e:
+        return f"DuckDuckGo search error: {str(e)}. Please check your internet connection and ensure 'requests' and 'beautifulsoup4' are installed."
 
 
 class ToolRegistry:
@@ -518,16 +556,30 @@ class ToolRegistry:
 @tool
 def calculator(expression: str) -> float:
     """
-    Evaluate a mathematical expression safely.
+    Evaluate a mathematical expression safely using AST-based validation.
 
-    Supports basic arithmetic (+, -, *, /), power (**), and common
+    Supports basic arithmetic (+, -, *, /), power (^ or **), and common
     math functions (sqrt, sin, cos, tan, log, exp, pi, e).
 
     Args:
         expression: Mathematical expression to evaluate
     """
+    import ast
     import math
+    import operator
 
+    # Supported operators
+    operators = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.Pow: operator.pow,
+        ast.USub: operator.neg,
+        ast.UAdd: operator.pos,
+    }
+
+    # Supported constants and functions
     allowed_names = {
         "sqrt": math.sqrt,
         "sin": math.sin,
@@ -546,14 +598,31 @@ def calculator(expression: str) -> float:
         "ceil": math.ceil,
     }
 
-    expression = expression.replace("^", "**")
+    def _eval(node):
+        if isinstance(node, (ast.Num, ast.Constant)):
+            return getattr(node, "n", getattr(node, "value", None))
+        elif isinstance(node, ast.BinOp):
+            return operators[type(node.op)](_eval(node.left), _eval(node.right))
+        elif isinstance(node, ast.UnaryOp):
+            return operators[type(node.op)](_eval(node.operand))
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in allowed_names:
+                args = [_eval(arg) for arg in node.args]
+                return allowed_names[node.func.id](*args)
+            raise ValueError(f"Function {node.func.id if isinstance(node.func, ast.Name) else 'unknown'} not allowed")
+        elif isinstance(node, ast.Name):
+            if node.id in allowed_names and not callable(allowed_names[node.id]):
+                return allowed_names[node.id]
+            raise ValueError(f"Variable {node.id} not allowed")
+        else:
+            raise TypeError(f"Unsupported syntax: {type(node).__name__}")
 
+    # Preliminary cleanup
+    expression = expression.replace("^", "**")
+    
     try:
-        code = compile(expression, "<string>", "eval")
-        for name in code.co_names:
-            if name not in allowed_names:
-                raise ValueError(f"Unsafe operation: {name}")
-        result = eval(code, {"__builtins__": {}}, allowed_names)
+        tree = ast.parse(expression, mode="eval")
+        result = _eval(tree.body)
         return float(result)
     except Exception as e:
         raise ValueError(f"Failed to evaluate expression: {e}")

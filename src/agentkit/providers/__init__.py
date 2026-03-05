@@ -15,6 +15,7 @@ from agentkit.providers.anthropic import AnthropicProvider
 from agentkit.providers.google import GoogleProvider
 from agentkit.providers.mistral import MistralProvider
 from agentkit.providers.ollama import OllamaProvider
+from agentkit.providers.mock import MockProvider
 
 __all__ = [
     "LLMProvider",
@@ -23,4 +24,5 @@ __all__ = [
     "GoogleProvider",
     "MistralProvider",
     "OllamaProvider",
+    "MockProvider",
 ]
