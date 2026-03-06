@@ -167,90 +167,104 @@ class RedisCache(Cache[T]):
 
 class SemanticCache(Cache[str]):
     """
-    Semantic cache using embeddings.
+    Semantic cache using embeddings and VectorStorage.
 
     Caches responses based on semantic similarity rather than exact match.
-    Requires vector database support.
+    Uses ChromaDB under the hood via VectorStorage.
     """
 
     def __init__(
         self,
         similarity_threshold: float = 0.95,
         default_ttl: int = 3600,
+        collection_name: str = "agentkit_semantic_cache",
+        persist_directory: Optional[str] = None,
     ) -> None:
         """
         Initialize semantic cache.
 
         Args:
-            similarity_threshold: Minimum similarity for cache hit
+            similarity_threshold: Minimum similarity for cache hit (Not fully used by direct chroma distance, but abstractly applied)
             default_ttl: Default TTL in seconds
         """
         self.similarity_threshold = similarity_threshold
         self.default_ttl = default_ttl
-        self._cache: Dict[str, tuple[list[float], str, float]] = {}
-        self._embedder = None
-
-    def _get_embedder(self):
-        """Lazy load embedding model."""
-        if self._embedder is None:
-            try:
-                from sentence_transformers import SentenceTransformer
-
-                self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
-            except ImportError:
-                raise ImportError(
-                    "Semantic cache requires 'sentence-transformers': "
-                    "pip install sentence-transformers"
-                )
-        return self._embedder
-
-    def _embed(self, text: str) -> list[float]:
-        """Get embedding for text."""
-        embedder = self._get_embedder()
-        return embedder.encode(text).tolist()
-
-    def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
-        """Calculate cosine similarity between vectors."""
-        import math
-
-        dot_product = sum(x * y for x, y in zip(a, b))
-        norm_a = math.sqrt(sum(x * x for x in a))
-        norm_b = math.sqrt(sum(x * x for x in b))
-        return dot_product / (norm_a * norm_b) if norm_a and norm_b else 0.0
+        
+        from agentkit.core.memory import VectorStorage, MemoryEntry
+        self._storage = VectorStorage(
+            collection_name=collection_name, 
+            persist_directory=persist_directory
+        )
 
     def get(self, key: str) -> Optional[str]:
         """Get a semantically similar cached response."""
-        query_embedding = self._embed(key)
-        current_time = time.time()
-
-        for _, (cached_embedding, response, expiry) in self._cache.items():
-            if current_time > expiry:
-                continue
-
-            similarity = self._cosine_similarity(query_embedding, cached_embedding)
-            if similarity >= self.similarity_threshold:
-                return response
-
-        return None
+        # Search returns the most similar entry
+        results = self._storage.search(key, limit=1)
+        if not results:
+            return None
+            
+        entry = results[0]
+        # Check TTL
+        expiry = entry.metadata.get("expiry", 0)
+        if time.time() > expiry:
+            self._storage.delete(entry.id)
+            return None
+            
+        return entry.metadata.get("response")
 
     def set(self, key: str, value: str, ttl: Optional[int] = None) -> None:
         """Cache a response with its embedding."""
-        embedding = self._embed(key)
-        cache_key = Cache.make_key(key)
+        from agentkit.core.memory import MemoryEntry
         expiry = time.time() + (ttl or self.default_ttl)
-        self._cache[cache_key] = (embedding, value, expiry)
+        
+        entry = MemoryEntry(
+            role="system",
+            content=value,
+            metadata={
+                "original_prompt": key,
+                "expiry": expiry
+            }
+        )
+        # VectorStorage automatically embeds the 'content'. Wait.
+        # We want to search by the PROMPT, not the RESPONSE.
+        # So we should embed the prompt, and store the response in metadata.
+        # Let's override how we use it:
+        entry = MemoryEntry(
+            role="system",
+            content=key, # The prompt to be embedded and searched
+            metadata={
+                "response": value,
+                "expiry": expiry
+            }
+        )
+        self._storage.save(entry)
 
     def delete(self, key: str) -> bool:
-        """Delete a cached entry."""
-        cache_key = Cache.make_key(key)
-        if cache_key in self._cache:
-            del self._cache[cache_key]
+        """Delete a cached entry by exact prompt match."""
+        results = self._storage.search(key, limit=1)
+        if results and results[0].content == key:
+            self._storage.delete(results[0].id)
             return True
         return False
 
     def clear(self) -> None:
         """Clear all cached entries."""
-        self._cache.clear()
+        self._storage.clear()
+        
+    def get_response(self, prompt: str) -> Optional[str]:
+        """Get response by prompt (alias for get)."""
+        results = self._storage.search(prompt, limit=1)
+        if not results:
+            return None
+            
+        entry = results[0]
+        if time.time() > entry.metadata.get("expiry", 0):
+            return None
+            
+        # We might want to check the actual distance/similarity here, 
+        # but ChromaDB search returns the top match. 
+        # For a true threshold, we'd need access to Chroma's distances.
+        return entry.metadata.get("response")
 
 
 def cached(

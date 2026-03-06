@@ -744,6 +744,10 @@ class Agent:
         schema = response_model.model_json_schema()
         structured_prompt = f"{prompt}\n\nYou MUST respond entirely in valid JSON format matching this schema:\n{json.dumps(schema, indent=2)}"
         
+        if self._memory and getattr(self._memory, "auto_summary", False) and getattr(self._memory, "max_messages", None):
+            if len(self._memory) > self._memory.max_messages:
+                await self._memory.asummarize(self.provider.acomplete)
+                
         result = await self.arun(structured_prompt, tools=tools, **kwargs)
         
         # Clean the output in case it wrapped in markdown code blocks
@@ -792,6 +796,11 @@ class Agent:
         error_msg: Optional[str] = None
 
         try:
+            # Auto-summarize memory if needed
+            if self._memory and getattr(self._memory, "auto_summary", False) and getattr(self._memory, "max_messages", None):
+                if len(self._memory) > self._memory.max_messages:
+                    await self._memory.asummarize(self.provider.acomplete)
+
             # Build initial messages
             messages = self._build_messages(prompt)
             all_messages = messages.copy()
@@ -952,6 +961,10 @@ class Agent:
         self._set_state(AgentState.RUNNING)
 
         try:
+            if self._memory and getattr(self._memory, "auto_summary", False) and getattr(self._memory, "max_messages", None):
+                if len(self._memory) > self._memory.max_messages:
+                    await self._memory.asummarize(self.provider.acomplete)
+                    
             messages = self._build_messages(prompt)
             tool_defs = self._tools.get_definitions()
             if tools:

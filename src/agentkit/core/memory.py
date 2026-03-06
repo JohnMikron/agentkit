@@ -20,7 +20,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
 
-from agentkit.core.types import Message, Role
+from typing import Any, Dict, Generic, List, Optional, TypeVar, Union, Callable
+
+from agentkit.core.types import Message, Role, ModelId
 
 T = TypeVar("T")
 
@@ -704,6 +706,8 @@ class Memory:
         storage: Optional[MemoryStorage] = None,
         system_prompt: Optional[str] = None,
         max_tokens: Optional[int] = None,
+        max_messages: Optional[int] = None,
+        auto_summary: bool = False,
     ) -> None:
         """
         Initialize memory with optional storage backend.
@@ -712,10 +716,45 @@ class Memory:
             storage: Storage backend (default: InMemoryStorage)
             system_prompt: Optional system prompt to include in history
             max_tokens: Optional max tokens limit for context window
+            max_messages: Optional max messages limit before summarization is needed
+            auto_summary: Whether agent should automatically summarize when limit is reached
         """
         self.storage = storage or InMemoryStorage()
         self.system_prompt = system_prompt
         self.max_tokens = max_tokens
+        self.max_messages = max_messages
+        self.auto_summary = auto_summary
+
+    async def asummarize(self, provider_complete: Callable[[List[Message]], Message], keep_recent: int = 2) -> bool:
+        """
+        Summarize older messages asynchronously using a provider to save context.
+        
+        Args:
+            provider_complete: An async callable that takes messages and returns a summary message.
+            keep_recent: Number of recent messages to retain in full text.
+            
+        Returns:
+            True if summarization occurred, False otherwise.
+        """
+        history = self.get_history()
+        if len(history) <= keep_recent + 1:
+            return False
+            
+        to_summarize = history[:-keep_recent]
+        recent = history[-keep_recent:]
+        
+        prompt = "Summarize the following conversation concisely, focusing on key facts, decisions, and context:\n\n"
+        for m in to_summarize:
+            prompt += f"{m.role}: {m.content}\n"
+            
+        summary_msg = await provider_complete([Message.user(prompt)])
+        
+        self.clear()
+        self.add_system_message(f"Summary of prior conversation: {summary_msg.content}")
+        for m in recent:
+            self.add_message(m)
+            
+        return True
 
     def add_message(self, message: Message) -> str:
         """Add a message to memory."""
