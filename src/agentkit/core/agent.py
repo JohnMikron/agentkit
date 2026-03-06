@@ -585,9 +585,10 @@ class Agent:
         system = self.config.system_prompt or f"You are a helpful AI assistant named {self.name}."
         messages.append(Message.system(system))
 
-        # Add memory history
-        if self._memory:
-            messages.extend(self._memory.get_history())
+        # Add memory history if enabled
+        if self._memory is not None:
+            history = self._memory.get_history(limit=self.config.max_iterations)
+            messages.extend(history)
 
         # Add current input
         messages.append(Message.user(user_input))
@@ -870,7 +871,7 @@ class Agent:
                     all_messages.append(final_msg)
 
                     # Store in memory
-                    if self._memory:
+                    if self._memory is not None:
                         self._memory.add_user_message(prompt)
                         self._memory.add_assistant_message(final_content)
 
@@ -930,7 +931,10 @@ class Agent:
         Yields:
             Text chunks from the response
         """
-        for chunk in asyncio.run(self.astream(prompt, tools=tools, **kwargs)):
+        async def _collect():
+            return [chunk async for chunk in self.astream(prompt, tools=tools, **kwargs)]
+            
+        for chunk in asyncio.run(_collect()):
             yield chunk
 
     async def astream(

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentkit"
-version = "1.3.0"
+version = "2.0.0"
 description = "Enterprise-grade AI Agent Framework - Build AI agents in 5 lines of code, not 500. The most powerful, simple, and production-ready Python agent framework for 2026."
 readme = "README.md"
 license = { text = "MIT" }
@@ -73,6 +73,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "requests>=2.31.0",
     "pymupdf>=1.23.0",
+    "beautifulsoup4>=4.12.0",
 ]
 
 [project.optional-dependencies]

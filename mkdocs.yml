@@ -1,0 +1,65 @@
+site_name: AgentKit
+site_description: Enterprise-grade AI Agent Framework
+site_url: https://JohnMikron.github.io/agentkit/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+
+repo_name: JohnMikron/agentkit
+repo_url: https://github.com/JohnMikron/agentkit
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+  - Core Concepts:
+    - Agents: core/agents.md
+    - Tools: core/tools.md
+    - Memory: core/memory.md
+    - Providers: core/providers.md
+  - Enterprise Features:
+    - Swarm Orchestration: enterprise/swarm.md
+    - Workflow DAGs: enterprise/workflows.md
+    - Reflection: enterprise/reflection.md
+    - Structured Output: enterprise/structured.md
+    - Human-in-the-Loop: enterprise/hitl.md
+  - Advanced:
+    - MCP Support: advanced/mcp.md
+    - Streaming & Async: advanced/async.md
+    - Caching: advanced/caching.md
+    - Telemetry & Hooks: advanced/telemetry.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+          
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html

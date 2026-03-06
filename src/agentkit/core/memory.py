@@ -70,18 +70,39 @@ class MemoryEntry:
     @classmethod
     def from_message(cls, message: Message) -> "MemoryEntry":
         """Create from a Message object."""
+        meta = message.metadata.copy()
+        if message.name:
+            meta["name"] = message.name
+        if message.tool_call_id:
+            meta["tool_call_id"] = message.tool_call_id
+        if message.tool_calls:
+            meta["tool_calls"] = [tc.model_dump() for tc in message.tool_calls]
+            
         return cls(
             role=message.role.value,
             content=message.content,
-            metadata=message.metadata,
+            metadata=meta,
         )
 
     def to_message(self) -> Message:
         """Convert to a Message object."""
+        from agentkit.core.types import ToolCall
+        meta = self.metadata.copy()
+        name = meta.pop("name", None)
+        tool_call_id = meta.pop("tool_call_id", None)
+        tool_calls_data = meta.pop("tool_calls", None)
+        
+        tool_calls = None
+        if tool_calls_data:
+            tool_calls = [ToolCall(**tc) for tc in tool_calls_data]
+            
         return Message(
             role=Role(self.role),
             content=self.content,
-            metadata=self.metadata,
+            name=name,
+            tool_call_id=tool_call_id,
+            tool_calls=tool_calls,
+            metadata=meta,
         )
 
 
