@@ -10,16 +10,11 @@ Provides tools for:
 
 from __future__ import annotations
 
-import asyncio
-import json
-import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.table import Table
 
 app = typer.Typer(
@@ -36,14 +31,13 @@ def run(
     prompt: str = typer.Argument(..., help="The prompt to send to the agent"),
     model: str = typer.Option("gpt-4o-mini", "--model", "-m", help="Model to use"),
     memory: bool = typer.Option(False, "--memory", help="Enable memory"),
-    system: Optional[str] = typer.Option(None, "--system", "-s", help="System prompt"),
-    tools: Optional[str] = typer.Option(None, "--tools", "-t", help="Python file with tools"),
+    system: str | None = typer.Option(None, "--system", "-s", help="System prompt"),
+    tools: str | None = typer.Option(None, "--tools", "-t", help="Python file with tools"),
     stream: bool = typer.Option(True, "--stream/--no-stream", help="Stream response"),
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug mode"),
 ) -> None:
     """Run an agent with a prompt."""
     from agentkit import Agent
-    from agentkit.core.config import get_settings
     from agentkit.utils.logging import setup_logging
 
     # Setup logging
@@ -101,7 +95,7 @@ def _run_streaming(agent, prompt: str) -> None:
         console.print()  # Newline at end
     except Exception as e:
         console.print(f"\n[red]Error: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def _run_sync(agent, prompt: str) -> None:
@@ -111,7 +105,7 @@ def _run_sync(agent, prompt: str) -> None:
             result = agent.run(prompt)
         except Exception as e:
             console.print(f"[red]Error: {e}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     console.print(f"\n[bold green]Assistant:[/bold green] {result}")
 
@@ -203,7 +197,7 @@ def test(
 
     except Exception as e:
         console.print(f"\n[red]✗ Test failed: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -237,7 +231,7 @@ def info() -> None:
 def shell(
     model: str = typer.Option("gpt-4o-mini", "--model", "-m", help="Model to use"),
     memory: bool = typer.Option(True, "--memory/--no-memory", help="Enable memory"),
-    system: Optional[str] = typer.Option(None, "--system", "-s", help="System prompt"),
+    system: str | None = typer.Option(None, "--system", "-s", help="System prompt"),
 ) -> None:
     """Start an interactive shell session with an agent."""
     from agentkit import Agent

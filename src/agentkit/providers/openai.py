@@ -9,20 +9,27 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Any, AsyncIterator, Dict, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from agentkit.core.exceptions import MissingAPIKeyError, ProviderAuthenticationError, ProviderError, ProviderRateLimitError, ProviderResponseError
+from agentkit.core.exceptions import (
+    MissingAPIKeyError,
+    ProviderAuthenticationError,
+    ProviderError,
+    ProviderRateLimitError,
+    ProviderResponseError,
+)
 from agentkit.core.types import (
-    FinishReason,
     LLMResponse,
     Message,
-    Role,
     ToolCall,
     ToolDefinition,
 )
 from agentkit.providers.base import LLMProvider
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator
 
 
 class OpenAIProvider(LLMProvider):
@@ -43,11 +50,11 @@ class OpenAIProvider(LLMProvider):
     def __init__(
         self,
         model: str = "gpt-4o-mini",
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        organization: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        organization: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         timeout: float = 60.0,
         **kwargs: Any,
     ) -> None:
@@ -64,7 +71,7 @@ class OpenAIProvider(LLMProvider):
         self._client = httpx.Client(timeout=timeout)
         self._async_client = httpx.AsyncClient(timeout=timeout)
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         """Build request headers."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -76,12 +83,12 @@ class OpenAIProvider(LLMProvider):
 
     def _build_request_body(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build request body for OpenAI API."""
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "model": self.model,
             "messages": [self._message_to_api_format(m) for m in messages],
         }
@@ -122,9 +129,9 @@ class OpenAIProvider(LLMProvider):
 
         return body
 
-    def _message_to_api_format(self, message: Message) -> Dict[str, Any]:
+    def _message_to_api_format(self, message: Message) -> dict[str, Any]:
         """Convert Message to OpenAI API format."""
-        result: Dict[str, Any] = {"role": message.role.value}
+        result: dict[str, Any] = {"role": message.role.value}
 
         if message.content:
             result["content"] = message.content
@@ -140,7 +147,7 @@ class OpenAIProvider(LLMProvider):
 
         return result
 
-    def _parse_response(self, response_data: Dict[str, Any]) -> LLMResponse:
+    def _parse_response(self, response_data: dict[str, Any]) -> LLMResponse:
         """Parse OpenAI API response."""
         choices = response_data.get("choices", [])
         if not choices:
@@ -209,8 +216,8 @@ class OpenAIProvider(LLMProvider):
 
     def complete(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion synchronously."""
@@ -233,8 +240,8 @@ class OpenAIProvider(LLMProvider):
 
     async def acomplete(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion asynchronously."""
@@ -257,8 +264,8 @@ class OpenAIProvider(LLMProvider):
 
     def stream(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> Iterator[str]:
         """Stream completion synchronously."""
@@ -289,8 +296,8 @@ class OpenAIProvider(LLMProvider):
 
     async def astream(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         """Stream completion asynchronously."""

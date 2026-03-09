@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Optional
 
 import structlog
 from rich.console import Console
@@ -21,7 +20,7 @@ from rich.logging import RichHandler
 def setup_logging(
     level: str = "INFO",
     format: str = "json",
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
     rich_tracebacks: bool = True,
 ) -> None:
     """
@@ -48,15 +47,10 @@ def setup_logging(
 
     if format == "json":
         # JSON format for production
-        processors = shared_processors + [
-            structlog.processors.format_exc_info,
-            structlog.processors.JSONRenderer(),
-        ]
+        processors = [*shared_processors, structlog.processors.format_exc_info, structlog.processors.JSONRenderer()]
     else:
         # Pretty format for development
-        processors = shared_processors + [
-            structlog.dev.ConsoleRenderer(colors=True),
-        ]
+        processors = [*shared_processors, structlog.dev.ConsoleRenderer(colors=True)]
 
     # Configure structlog
     structlog.configure(
@@ -108,7 +102,7 @@ def setup_logging(
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
-def get_logger(name: Optional[str] = None) -> structlog.stdlib.BoundLogger:
+def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """
     Get a structured logger.
 

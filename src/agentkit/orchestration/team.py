@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentkit.core.agent import Agent
-from agentkit.core.types import AgentResult, Message
+from agentkit.core.types import AgentResult
+
+if TYPE_CHECKING:
+    from agentkit.core.agent import Agent
 
 
 class TeamRole(str, Enum):
@@ -44,7 +46,7 @@ class AgentConfig:
     agent: Agent
     role: TeamRole = TeamRole.WORKER
     weight: float = 1.0  # For voting/weighted decisions
-    max_tasks: Optional[int] = None  # Max concurrent tasks
+    max_tasks: int | None = None  # Max concurrent tasks
 
 
 class TeamConfig(BaseModel):
@@ -66,11 +68,11 @@ class TeamResult(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     success: bool = True
-    results: Dict[str, AgentResult] = Field(default_factory=dict)
+    results: dict[str, AgentResult] = Field(default_factory=dict)
     final_output: str = ""
     total_iterations: int = 0
     latency_ms: float = 0.0
-    errors: List[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
 
 
 class Team:
@@ -94,19 +96,19 @@ class Team:
         self,
         name: str = "team",
         strategy: TeamStrategy = TeamStrategy.SEQUENTIAL,
-        config: Optional[TeamConfig] = None,
+        config: TeamConfig | None = None,
     ) -> None:
         self.config = config or TeamConfig(name=name, strategy=strategy)
-        self._agents: Dict[str, AgentConfig] = {}
-        self._leader: Optional[Agent] = None
+        self._agents: dict[str, AgentConfig] = {}
+        self._leader: Agent | None = None
 
     def add_agent(
         self,
         agent: Agent,
         role: TeamRole = TeamRole.WORKER,
         weight: float = 1.0,
-        max_tasks: Optional[int] = None,
-    ) -> "Team":
+        max_tasks: int | None = None,
+    ) -> Team:
         """
         Add an agent to the team.
 
@@ -124,7 +126,7 @@ class Team:
 
         return self
 
-    def remove_agent(self, name: str) -> Optional[Agent]:
+    def remove_agent(self, name: str) -> Agent | None:
         """Remove an agent from the team."""
         if name in self._agents:
             config = self._agents.pop(name)
@@ -133,7 +135,7 @@ class Team:
             return config.agent
         return None
 
-    def get_agents(self, role: Optional[TeamRole] = None) -> List[Agent]:
+    def get_agents(self, role: TeamRole | None = None) -> list[Agent]:
         """Get agents, optionally filtered by role."""
         agents = [cfg.agent for cfg in self._agents.values()]
         if role:
@@ -181,10 +183,10 @@ class Team:
 
     async def _run_sequential(self, task: str, **kwargs: Any) -> TeamResult:
         """Run agents sequentially, passing output to next agent."""
-        results: Dict[str, AgentResult] = {}
+        results: dict[str, AgentResult] = {}
         current_input = task
         total_iterations = 0
-        errors: List[str] = []
+        errors: list[str] = []
 
         workers = [cfg for cfg in self._agents.values() if cfg.role != TeamRole.REVIEWER]
 
@@ -208,7 +210,7 @@ class Team:
                     errors.append(f"Agent {agent.name} failed: {result.error}")
 
             except Exception as e:
-                errors.append(f"Agent {agent.name} error: {str(e)}")
+                errors.append(f"Agent {agent.name} error: {e!s}")
                 if not self.config.retry_failed:
                     break
 
@@ -223,7 +225,7 @@ class Team:
                     if result.success:
                         current_input = result.content
                 except Exception as e:
-                    errors.append(f"Reviewer {reviewer.name} error: {str(e)}")
+                    errors.append(f"Reviewer {reviewer.name} error: {e!s}")
 
         return TeamResult(
             success=len(errors) == 0,
@@ -235,9 +237,9 @@ class Team:
 
     async def _run_parallel(self, task: str, **kwargs: Any) -> TeamResult:
         """Run agents in parallel and aggregate results."""
-        results: Dict[str, AgentResult] = {}
+        results: dict[str, AgentResult] = {}
         total_iterations = 0
-        errors: List[str] = []
+        errors: list[str] = []
 
         # Create tasks for all agents
         async def run_agent(cfg: AgentConfig) -> tuple[str, AgentResult]:
@@ -286,9 +288,9 @@ class Team:
             # Fall back to sequential if no leader
             return await self._run_sequential(task, **kwargs)
 
-        results: Dict[str, AgentResult] = {}
+        results: dict[str, AgentResult] = {}
         total_iterations = 0
-        errors: List[str] = []
+        errors: list[str] = []
 
         # Leader analyzes task and creates subtasks
         leader_prompt = f"""Analyze this task and break it into subtasks for your team.
@@ -340,7 +342,7 @@ Create a JSON list of subtasks with assigned workers:
                     results[worker_name] = result
                     total_iterations += result.iterations
                 except Exception as e:
-                    errors.append(f"Worker {worker_name} error: {str(e)}")
+                    errors.append(f"Worker {worker_name} error: {e!s}")
 
         # Leader aggregates results
         worker_outputs = {
@@ -376,10 +378,10 @@ Original task: {task}"""
 
     async def _run_round_robin(self, task: str, **kwargs: Any) -> TeamResult:
         """Run agents in round-robin fashion."""
-        results: Dict[str, AgentResult] = {}
+        results: dict[str, AgentResult] = {}
         current_input = task
         total_iterations = 0
-        errors: List[str] = []
+        errors: list[str] = []
 
         workers = [cfg.agent for cfg in self._agents.values() if cfg.role == TeamRole.WORKER]
 
@@ -403,7 +405,7 @@ Make progress and pass to the next agent."""
                 if result.success:
                     current_input = result.content
             except Exception as e:
-                errors.append(f"Agent {agent.name} error: {str(e)}")
+                errors.append(f"Agent {agent.name} error: {e!s}")
 
         return TeamResult(
             success=len(errors) == 0,

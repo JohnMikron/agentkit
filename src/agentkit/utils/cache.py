@@ -12,7 +12,7 @@ import hashlib
 import json
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -21,12 +21,12 @@ class Cache(ABC, Generic[T]):
     """Abstract cache interface."""
 
     @abstractmethod
-    def get(self, key: str) -> Optional[T]:
+    def get(self, key: str) -> T | None:
         """Get a value from cache."""
         pass
 
     @abstractmethod
-    def set(self, key: str, value: T, ttl: Optional[int] = None) -> None:
+    def set(self, key: str, value: T, ttl: int | None = None) -> None:
         """Set a value in cache with optional TTL."""
         pass
 
@@ -68,11 +68,11 @@ class InMemoryCache(Cache[T]):
         self._cache: TTLCache = TTLCache(maxsize=max_size, ttl=default_ttl)
         self.default_ttl = default_ttl
 
-    def get(self, key: str) -> Optional[T]:
+    def get(self, key: str) -> T | None:
         """Get a value from cache."""
         return self._cache.get(key)
 
-    def set(self, key: str, value: T, ttl: Optional[int] = None) -> None:
+    def set(self, key: str, value: T, ttl: int | None = None) -> None:
         """Set a value in cache."""
         self._cache[key] = value
 
@@ -119,8 +119,8 @@ class RedisCache(Cache[T]):
         """
         try:
             import redis
-        except ImportError:
-            raise ImportError("Redis cache requires 'redis' package: pip install redis")
+        except ImportError as err:
+            raise ImportError("Redis cache requires 'redis' package: pip install redis") from err
 
         self._redis = redis.from_url(redis_url)
         self.prefix = prefix
@@ -130,7 +130,7 @@ class RedisCache(Cache[T]):
         """Create full Redis key with prefix."""
         return f"{self.prefix}{key}"
 
-    def get(self, key: str) -> Optional[T]:
+    def get(self, key: str) -> T | None:
         """Get a value from cache."""
         redis_key = self._make_redis_key(key)
         data = self._redis.get(redis_key)
@@ -141,15 +141,12 @@ class RedisCache(Cache[T]):
                 return data
         return None
 
-    def set(self, key: str, value: T, ttl: Optional[int] = None) -> None:
+    def set(self, key: str, value: T, ttl: int | None = None) -> None:
         """Set a value in cache."""
         redis_key = self._make_redis_key(key)
         ttl = ttl or self.default_ttl
 
-        if isinstance(value, (dict, list)):
-            data = json.dumps(value)
-        else:
-            data = str(value)
+        data = json.dumps(value) if isinstance(value, (dict, list)) else str(value)
 
         self._redis.setex(redis_key, ttl, data)
 
@@ -178,7 +175,7 @@ class SemanticCache(Cache[str]):
         similarity_threshold: float = 0.95,
         default_ttl: int = 3600,
         collection_name: str = "agentkit_semantic_cache",
-        persist_directory: Optional[str] = None,
+        persist_directory: str | None = None,
     ) -> None:
         """
         Initialize semantic cache.
@@ -189,34 +186,34 @@ class SemanticCache(Cache[str]):
         """
         self.similarity_threshold = similarity_threshold
         self.default_ttl = default_ttl
-        
-        from agentkit.core.memory import VectorStorage, MemoryEntry
+
+        from agentkit.core.memory import VectorStorage
         self._storage = VectorStorage(
-            collection_name=collection_name, 
+            collection_name=collection_name,
             persist_directory=persist_directory
         )
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         """Get a semantically similar cached response."""
         # Search returns the most similar entry
         results = self._storage.search(key, limit=1)
         if not results:
             return None
-            
+
         entry = results[0]
         # Check TTL
         expiry = entry.metadata.get("expiry", 0)
         if time.time() > expiry:
             self._storage.delete(entry.id)
             return None
-            
+
         return entry.metadata.get("response")
 
-    def set(self, key: str, value: str, ttl: Optional[int] = None) -> None:
+    def set(self, key: str, value: str, ttl: int | None = None) -> None:
         """Cache a response with its embedding."""
         from agentkit.core.memory import MemoryEntry
         expiry = time.time() + (ttl or self.default_ttl)
-        
+
         entry = MemoryEntry(
             role="system",
             content=value,
@@ -250,27 +247,27 @@ class SemanticCache(Cache[str]):
     def clear(self) -> None:
         """Clear all cached entries."""
         self._storage.clear()
-        
-    def get_response(self, prompt: str) -> Optional[str]:
+
+    def get_response(self, prompt: str) -> str | None:
         """Get response by prompt (alias for get)."""
         results = self._storage.search(prompt, limit=1)
         if not results:
             return None
-            
+
         entry = results[0]
         if time.time() > entry.metadata.get("expiry", 0):
             return None
-            
-        # We might want to check the actual distance/similarity here, 
-        # but ChromaDB search returns the top match. 
+
+        # We might want to check the actual distance/similarity here,
+        # but ChromaDB search returns the top match.
         # For a true threshold, we'd need access to Chroma's distances.
         return entry.metadata.get("response")
 
 
 def cached(
     cache: Cache,
-    key_func: Optional[callable] = None,
-    ttl: Optional[int] = None,
+    key_func: callable | None = None,
+    ttl: int | None = None,
 ):
     """
     Decorator to cache function results.

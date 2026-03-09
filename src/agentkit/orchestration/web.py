@@ -6,9 +6,9 @@ A high-level agent pre-configured with web search and scraping tools.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
-from agentkit.core.agent import Agent, AgentConfig
+from agentkit.core.agent import Agent
 from agentkit.core.tools import tool
 
 try:
@@ -22,7 +22,7 @@ except ImportError:
 class WebAgent(Agent):
     """
     Agent specialized in web-related tasks.
-    
+
     Includes built-in tools for:
     - Web search (DuckDuckGo)
     - Web page scraping
@@ -32,9 +32,9 @@ class WebAgent(Agent):
     def __init__(
         self,
         name: str = "web_assistant",
-        model: Optional[str] = None,
+        model: str | None = None,
         memory: bool = True,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize WebAgent with built-in tools."""
@@ -65,7 +65,7 @@ class WebAgent(Agent):
     def search_web(self, query: str, limit: int = 5) -> str:
         """
         Search the web using DuckDuckGo.
-        
+
         Args:
             query: The search query
             limit: Number of results to return
@@ -79,7 +79,7 @@ class WebAgent(Agent):
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
             response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
-            
+
             soup = BeautifulSoup(response.text, "html.parser")
             results = []
             for result in soup.find_all("div", class_="result")[:limit]:
@@ -87,19 +87,19 @@ class WebAgent(Agent):
                 snippet = result.find("a", class_="result__snippet")
                 if title and snippet:
                     results.append(f"Title: {title.text.strip()}\nURL: {title['href']}\nSnippet: {snippet.text.strip()}\n")
-            
+
             if not results:
                 return "No results found."
-                
+
             return "\n".join(results)
         except Exception as e:
-            return f"Error searching the web: {str(e)}"
+            return f"Error searching the web: {e!s}"
 
     @tool
     def scrape_url(self, url: str) -> str:
         """
         Get the text content of a web page.
-        
+
         Args:
             url: The URL to scrape
         """
@@ -110,19 +110,19 @@ class WebAgent(Agent):
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
             response = requests.get(url, headers=headers, timeout=15)
             response.raise_for_status()
-            
+
             soup = BeautifulSoup(response.text, "html.parser")
-            
+
             # Remove scripts and styles
             for script in soup(["script", "style"]):
                 script.decompose()
-                
+
             text = soup.get_text(separator="\n", strip=True)
-            
+
             # Simple summarization for very long pages
             if len(text) > 10000:
                 text = text[:10000] + "\n... (content truncated)"
-                
+
             return text
         except Exception as e:
-            return f"Error scraping URL: {str(e)}"
+            return f"Error scraping URL: {e!s}"

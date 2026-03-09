@@ -11,21 +11,24 @@ from __future__ import annotations
 
 import asyncio
 import json
-from agentkit.mcp.client import MCPClient, MCPToolDefinition, MCPResourceDefinition, MCPPromptDefinition
-from agentkit.mcp.server import MCPServer, ToolCallback, ResourceCallback, PromptCallback
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from agentkit.core.tools import Tool
 
 __all__ = [
     "MCPClient",
+    "MCPPromptDefinition",
+    "MCPResourceDefinition",
     "MCPServer",
     "MCPToolDefinition",
-    "MCPResourceDefinition",
-    "MCPPromptDefinition",
-    "ToolCallback",
-    "ResourceCallback",
     "PromptCallback",
+    "ResourceCallback",
+    "ToolCallback",
     "load_mcp_tools"
 ]
 
@@ -34,7 +37,7 @@ class MCPToolDefinition(BaseModel):
 
     name: str
     description: str
-    input_schema: Dict[str, Any] = Field(default_factory=dict)
+    input_schema: dict[str, Any] = Field(default_factory=dict)
 
 
 class MCPResource(BaseModel):
@@ -42,8 +45,8 @@ class MCPResource(BaseModel):
 
     uri: str
     name: str
-    description: Optional[str] = None
-    mime_type: Optional[str] = None
+    description: str | None = None
+    mime_type: str | None = None
 
 
 class MCPPrompt(BaseModel):
@@ -51,7 +54,7 @@ class MCPPrompt(BaseModel):
 
     name: str
     description: str
-    arguments: List[Dict[str, Any]] = Field(default_factory=list)
+    arguments: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class MCPServer:
@@ -84,18 +87,18 @@ class MCPServer:
         self.name = name
         self.version = version
 
-        self._tools: Dict[str, MCPToolDefinition] = {}
-        self._resources: Dict[str, MCPResource] = {}
-        self._prompts: Dict[str, MCPPrompt] = {}
-        self._tool_handlers: Dict[str, Callable] = {}
+        self._tools: dict[str, MCPToolDefinition] = {}
+        self._resources: dict[str, MCPResource] = {}
+        self._prompts: dict[str, MCPPrompt] = {}
+        self._tool_handlers: dict[str, Callable] = {}
 
     def add_tool(
         self,
         name: str,
         description: str,
-        input_schema: Dict[str, Any],
+        input_schema: dict[str, Any],
         handler: Callable,
-    ) -> "MCPServer":
+    ) -> MCPServer:
         """Add a tool to the server."""
         self._tools[name] = MCPToolDefinition(
             name=name,
@@ -110,8 +113,8 @@ class MCPServer:
         uri: str,
         name: str,
         content: Any,
-        mime_type: Optional[str] = None,
-    ) -> "MCPServer":
+        mime_type: str | None = None,
+    ) -> MCPServer:
         """Add a resource to the server."""
         self._resources[uri] = MCPResource(
             uri=uri,
@@ -129,8 +132,8 @@ class MCPServer:
         name: str,
         description: str,
         template: str,
-        arguments: Optional[List[Dict[str, Any]]] = None,
-    ) -> "MCPServer":
+        arguments: list[dict[str, Any]] | None = None,
+    ) -> MCPServer:
         """Add a prompt template to the server."""
         self._prompts[name] = MCPPrompt(
             name=name,
@@ -142,7 +145,7 @@ class MCPServer:
         self._prompt_templates[name] = template
         return self
 
-    def expose_agent_tools(self, agent) -> "MCPServer":
+    def expose_agent_tools(self, agent) -> MCPServer:
         """
         Expose all tools from an Agent as MCP tools.
 
@@ -161,7 +164,7 @@ class MCPServer:
             )
         return self
 
-    def expose_agent_memory(self, agent, resource_uri: str = "memory://conversation") -> "MCPServer":
+    def expose_agent_memory(self, agent, resource_uri: str = "memory://conversation") -> MCPServer:
         """
         Expose agent memory as an MCP resource.
 
@@ -182,7 +185,7 @@ class MCPServer:
             )
         return self
 
-    async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    async def handle_request(self, request: dict[str, Any]) -> dict[str, Any]:
         """
         Handle an MCP request.
 
@@ -351,7 +354,7 @@ class MCPServer:
                 "id": request_id,
                 "error": {
                     "code": -32603,
-                    "message": f"Internal error: {str(e)}",
+                    "message": f"Internal error: {e!s}",
                 },
             }
 
@@ -388,7 +391,7 @@ class MCPServer:
                     "id": None,
                     "error": {
                         "code": -32700,
-                        "message": f"Parse error: {str(e)}",
+                        "message": f"Parse error: {e!s}",
                     },
                 }
                 writer.write((json.dumps(error_response) + "\n").encode())
@@ -413,10 +416,10 @@ class MCPClient:
     """
 
     def __init__(self) -> None:
-        self._tools: Dict[str, MCPToolDefinition] = {}
+        self._tools: dict[str, MCPToolDefinition] = {}
         self._process = None
 
-    async def connect(self, command: str, args: Optional[List[str]] = None) -> None:
+    async def connect(self, command: str, args: list[str] | None = None) -> None:
         """
         Connect to an MCP server.
 
@@ -459,7 +462,7 @@ class MCPClient:
             tool = MCPToolDefinition(**tool_data)
             self._tools[tool.name] = tool
 
-    async def _send_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    async def _send_request(self, request: dict[str, Any]) -> dict[str, Any]:
         """Send a request to the MCP server."""
         if not self._process or not self._process.stdin:
             raise RuntimeError("Not connected to MCP server")
@@ -473,11 +476,11 @@ class MCPClient:
         response_line = await self._process.stdout.readline()
         return json.loads(response_line.decode())
 
-    async def list_tools(self) -> List[MCPToolDefinition]:
+    async def list_tools(self) -> list[MCPToolDefinition]:
         """Get list of available tools."""
         return list(self._tools.values())
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
         """Call a tool on the MCP server."""
         if name not in self._tools:
             raise ValueError(f"Tool not found: {name}")
@@ -508,7 +511,7 @@ class MCPClient:
             self._process = None
 
 
-async def load_mcp_tools(command: str, args: Optional[List[str]] = None) -> List["Tool"]:
+async def load_mcp_tools(command: str, args: list[str] | None = None) -> list[Tool]:
     """
     Convenience function to connect to an MCP server, read its tools,
     and return them as native AgentKit Tool objects.
@@ -521,13 +524,13 @@ async def load_mcp_tools(command: str, args: Optional[List[str]] = None) -> List
         A list of AgentKit Tool instances ready to be added to an Agent.
     """
     from agentkit.core.tools import Tool
-    
+
     client = MCPClient()
     await client.connect(command, args)
     mcp_tools = await client.list_tools()
 
     native_tools = []
-    
+
     for mcp_tool in mcp_tools:
         # We need to capture the current tool context correctly in the lambda
         def make_handler(tool_name: str):
@@ -545,5 +548,5 @@ async def load_mcp_tools(command: str, args: Optional[List[str]] = None) -> List
         # Note: Ideally, `Tool` would natively accept arbitrary JSON Schema constraints
         # without inspecting a Python function signature. Since AgentKit relies on standard
         # Pydantic/inspect parsing, advanced MCP schemas might degrade gracefully.
-        
+
     return native_tools

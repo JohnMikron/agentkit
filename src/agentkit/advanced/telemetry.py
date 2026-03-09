@@ -5,14 +5,17 @@ Provides an AgentHook that automatically traces agent execution, LLM requests,
 and tool calls, sending them to an OpenTelemetry collector (e.g. Jaeger, Zipkin, Datadog).
 """
 
-from typing import Any, Dict, Optional
+
+from typing import TYPE_CHECKING
 
 from agentkit.core.agent import Agent
-from agentkit.core.types import Event, EventType
+from agentkit.core.types import Event
+
+if TYPE_CHECKING:
+    from opentelemetry.trace import Span, Tracer
 
 try:
     from opentelemetry import trace
-    from opentelemetry.trace import Tracer, Span
     from opentelemetry.trace.status import Status, StatusCode
     HAS_OTEL = True
 except ImportError:
@@ -22,7 +25,7 @@ except ImportError:
 class OpenTelemetryHook:
     """
     Hook that exports agent events as OpenTelemetry spans.
-    
+
     Usage:
         agent = Agent("researcher")
         otel_hook = OpenTelemetryHook("agentkit-tracer")
@@ -37,9 +40,9 @@ class OpenTelemetryHook:
                 "Install with: pip install opentelemetry-api opentelemetry-sdk"
             )
         self.tracer: Tracer = trace.get_tracer(tracer_name)
-        
+
         # State tracking for spans
-        self._active_spans: Dict[str, Span] = {}
+        self._active_spans: dict[str, Span] = {}
 
     def attach(self, agent: Agent) -> None:
         """Attach this hook to an agent's lifecycle."""
@@ -90,21 +93,21 @@ class OpenTelemetryHook:
     def on_tool_call_start(self, event: Event) -> None:
         tool_name = event.data.get("tool_name", "unknown")
         call_id = event.data.get("tool_call_id", "unknown")
-        
+
         span = self.tracer.start_span(f"Tool.{tool_name}")
         span.set_attribute("tool.name", tool_name)
         span.set_attribute("tool.call_id", call_id)
-        
+
         # Serialize arguments safely
         args = event.data.get("arguments", {})
         span.set_attribute("tool.arguments", str(args))
-            
+
         self._active_spans[f"tool_{call_id}"] = span
 
     def on_tool_call_end(self, event: Event) -> None:
         call_id = event.data.get("tool_call_id", "unknown")
         is_error = event.data.get("is_error", False)
-        
+
         span = self._active_spans.get(f"tool_{call_id}")
         if span:
             if is_error:

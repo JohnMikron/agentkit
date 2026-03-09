@@ -8,12 +8,13 @@ including messages, tool definitions, and configuration structures.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, Generic, List, Literal, Optional, TypeVar, Union
+from typing import Any, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 # Type variables for generics
 T = TypeVar("T")
@@ -63,15 +64,15 @@ class Message(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     role: Role
     content: str = ""
-    name: Optional[str] = None
-    tool_call_id: Optional[str] = None
-    tool_calls: Optional[List[ToolCall]] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[ToolCall] | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    def to_api_format(self) -> Dict[str, Any]:
+    def to_api_format(self) -> dict[str, Any]:
         """Convert to API-compatible dictionary format."""
-        result: Dict[str, Any] = {"role": self.role.value}
+        result: dict[str, Any] = {"role": self.role.value}
 
         if self.content:
             result["content"] = self.content
@@ -88,12 +89,12 @@ class Message(BaseModel):
         return result
 
     @classmethod
-    def system(cls, content: str, **kwargs: Any) -> "Message":
+    def system(cls, content: str, **kwargs: Any) -> Message:
         """Create a system message."""
         return cls(role=Role.SYSTEM, content=content, **kwargs)
 
     @classmethod
-    def user(cls, content: str, **kwargs: Any) -> "Message":
+    def user(cls, content: str, **kwargs: Any) -> Message:
         """Create a user message."""
         return cls(role=Role.USER, content=content, **kwargs)
 
@@ -101,9 +102,9 @@ class Message(BaseModel):
     def assistant(
         cls,
         content: str = "",
-        tool_calls: Optional[List["ToolCall"]] = None,
+        tool_calls: list[ToolCall] | None = None,
         **kwargs: Any,
-    ) -> "Message":
+    ) -> Message:
         """Create an assistant message."""
         return cls(role=Role.ASSISTANT, content=content, tool_calls=tool_calls, **kwargs)
 
@@ -114,7 +115,7 @@ class Message(BaseModel):
         tool_call_id: str,
         name: str,
         **kwargs: Any,
-    ) -> "Message":
+    ) -> Message:
         """Create a tool result message."""
         return cls(
             role=Role.TOOL,
@@ -141,7 +142,7 @@ class ToolCall(BaseModel):
     name: str
     arguments: str = "{}"
 
-    def to_api_format(self) -> Dict[str, Any]:
+    def to_api_format(self) -> dict[str, Any]:
         """Convert to API-compatible format."""
         return {
             "id": self.id,
@@ -152,7 +153,7 @@ class ToolCall(BaseModel):
             },
         }
 
-    def parse_arguments(self) -> Dict[str, Any]:
+    def parse_arguments(self) -> dict[str, Any]:
         """Parse arguments from JSON string."""
         import json
 
@@ -177,10 +178,10 @@ class ToolDefinition(BaseModel):
 
     name: str
     description: str
-    parameters: Dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
     strict: bool = False
 
-    def to_api_format(self) -> Dict[str, Any]:
+    def to_api_format(self) -> dict[str, Any]:
         """Convert to OpenAI-compatible tool format."""
         result = {
             "type": "function",
@@ -212,8 +213,9 @@ class ToolResult(BaseModel):
     tool_call_id: str
     name: str
     content: str
+    raw_result: Any = Field(default=None)
     is_error: bool = False
-    execution_time_ms: Optional[float] = None
+    execution_time_ms: float | None = None
 
     def to_message(self) -> Message:
         """Convert to a Message object."""
@@ -235,7 +237,7 @@ class Usage(BaseModel):
     total_tokens: int = 0
     cached_tokens: int = 0
 
-    def __add__(self, other: "Usage") -> "Usage":
+    def __add__(self, other: Usage) -> Usage:
         """Add two Usage objects together.
 
         The resulting total_tokens is recalculated from the summed
@@ -271,12 +273,12 @@ class LLMResponse(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     content: str = ""
-    tool_calls: Optional[List[ToolCall]] = None
-    finish_reason: Optional[FinishReason] = None
+    tool_calls: list[ToolCall] | None = None
+    finish_reason: FinishReason | None = None
     usage: Usage = Field(default_factory=Usage)
-    model: Optional[str] = None
-    latency_ms: Optional[float] = None
-    raw_response: Optional[Any] = None
+    model: str | None = None
+    latency_ms: float | None = None
+    raw_response: Any | None = None
 
     @property
     def has_tool_calls(self) -> bool:
@@ -323,15 +325,15 @@ class AgentResult(BaseModel):
 
     success: bool = True
     content: str = ""
-    tool_calls: List[ToolCall] = Field(default_factory=list)
-    tool_results: List[ToolResult] = Field(default_factory=list)
-    messages: List[Message] = Field(default_factory=list)
+    tool_calls: list[ToolCall] = Field(default_factory=list)
+    tool_results: list[ToolResult] = Field(default_factory=list)
+    messages: list[Message] = Field(default_factory=list)
     usage: Usage = Field(default_factory=Usage)
     iterations: int = 0
     state: AgentState = AgentState.COMPLETED
-    error: Optional[str] = None
-    latency_ms: Optional[float] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+    latency_ms: float | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def failed(self) -> bool:
@@ -371,9 +373,9 @@ class Event:
 
     type: EventType
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    agent_name: Optional[str] = None
-    data: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    agent_name: str | None = None
+    data: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # Hook function types
@@ -387,7 +389,7 @@ AsyncToolFunction = Callable[..., Any]
 class ModelId(str, Enum):
     """Supported model identifiers."""
 
-    # OpenAI – current and legacy
+    # OpenAI - current and legacy
     GPT_5_3 = "gpt-5.3-chat-latest"
     GPT_5_3_CODEX = "gpt-5.3-codex-latest"
     GPT_5_2 = "gpt-5.2-instant"
@@ -401,7 +403,7 @@ class ModelId(str, Enum):
     O1_MINI = "o1-mini"
     O1_PRO = "o1-pro"
 
-    # Anthropic – current and legacy
+    # Anthropic - current and legacy
     CLAUDE_4_6_OPUS = "claude-4-6-opus-latest"
     CLAUDE_4_6_SONNET = "claude-4-6-sonnet-latest"
     CLAUDE_4_5_HAIKU = "claude-4-5-haiku-latest"
@@ -409,7 +411,7 @@ class ModelId(str, Enum):
     CLAUDE_3_5_HAIKU = "claude-3-5-haiku-latest"
     CLAUDE_3_OPUS = "claude-3-opus-latest"
 
-    # Google – current and experimental
+    # Google - current and experimental
     GEMINI_3_1_PRO = "gemini-3.1-pro"
     GEMINI_3_1_FLASH = "gemini-3.1-flash"
     GEMINI_3_DEEP_THINK = "gemini-3-deep-think"

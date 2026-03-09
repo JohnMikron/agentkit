@@ -7,7 +7,7 @@ error handling throughout the framework.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class AgentKitError(Exception):
@@ -26,15 +26,15 @@ class AgentKitError(Exception):
     def __init__(
         self,
         message: str,
-        code: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        code: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
         self.code = code or "UNKNOWN_ERROR"
         self.details = details or {}
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert exception to dictionary format."""
         return {
             "error": self.code,
@@ -59,8 +59,8 @@ class ConfigurationError(AgentKitError):
     def __init__(
         self,
         message: str,
-        config_key: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        config_key: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         details = details or {}
         if config_key:
@@ -83,7 +83,7 @@ class MissingAPIKeyError(ConfigurationError):
 class InvalidModelError(ConfigurationError):
     """Raised when an invalid model is specified."""
 
-    def __init__(self, model: str, provider: str, available_models: Optional[List[str]] = None) -> None:
+    def __init__(self, model: str, provider: str, available_models: list[str] | None = None) -> None:
         details = {"model": model, "provider": provider}
         if available_models:
             details["available_models"] = available_models
@@ -107,8 +107,8 @@ class ProviderError(AgentKitError):
         self,
         message: str,
         provider: str,
-        code: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        code: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         details = details or {}
         details["provider"] = provider
@@ -119,7 +119,7 @@ class ProviderError(AgentKitError):
 class ProviderConnectionError(ProviderError):
     """Raised when connection to provider fails."""
 
-    def __init__(self, provider: str, original_error: Optional[Exception] = None) -> None:
+    def __init__(self, provider: str, original_error: Exception | None = None) -> None:
         details = {}
         if original_error:
             details["original_error"] = str(original_error)
@@ -137,8 +137,8 @@ class ProviderRateLimitError(ProviderError):
     def __init__(
         self,
         provider: str,
-        retry_after: Optional[int] = None,
-        limit_type: Optional[str] = None,
+        retry_after: int | None = None,
+        limit_type: str | None = None,
     ) -> None:
         details = {}
         if retry_after:
@@ -157,7 +157,7 @@ class ProviderRateLimitError(ProviderError):
 class ProviderAuthenticationError(ProviderError):
     """Raised when authentication fails."""
 
-    def __init__(self, provider: str, message: Optional[str] = None) -> None:
+    def __init__(self, provider: str, message: str | None = None) -> None:
         super().__init__(
             message=message or f"Authentication failed for {provider}",
             provider=provider,
@@ -168,7 +168,7 @@ class ProviderAuthenticationError(ProviderError):
 class ProviderModelNotSupportedError(ProviderError):
     """Raised when the requested model is not supported."""
 
-    def __init__(self, provider: str, model: str, available_models: Optional[List[str]] = None) -> None:
+    def __init__(self, provider: str, model: str, available_models: list[str] | None = None) -> None:
         details = {"requested_model": model}
         if available_models:
             details["available_models"] = available_models
@@ -187,7 +187,7 @@ class ProviderResponseError(ProviderError):
         self,
         provider: str,
         message: str,
-        response: Optional[Any] = None,
+        response: Any | None = None,
     ) -> None:
         details = {}
         if response:
@@ -211,9 +211,9 @@ class ToolError(AgentKitError):
     def __init__(
         self,
         message: str,
-        tool_name: Optional[str] = None,
-        code: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        tool_name: str | None = None,
+        code: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         details = details or {}
         if tool_name:
@@ -239,8 +239,8 @@ class ToolExecutionError(ToolError):
     def __init__(
         self,
         tool_name: str,
-        original_error: Optional[Exception] = None,
-        arguments: Optional[Dict[str, Any]] = None,
+        original_error: Exception | None = None,
+        arguments: dict[str, Any] | None = None,
     ) -> None:
         details = {}
         if original_error:
@@ -262,7 +262,7 @@ class ToolValidationError(ToolError):
     def __init__(
         self,
         tool_name: str,
-        validation_errors: List[Dict[str, Any]],
+        validation_errors: list[dict[str, Any]],
     ) -> None:
         super().__init__(
             message=f"Tool '{tool_name}' argument validation failed",
@@ -276,7 +276,7 @@ class ToolValidationError(ToolError):
 class RequireApproval(ToolError):
     """Raised when Human-in-the-Loop approval is required but not granted."""
 
-    def __init__(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, tool_name: str, arguments: dict[str, Any] | None = None) -> None:
         super().__init__(
             message=f"Execution of '{tool_name}' requires human approval",
             tool_name=tool_name,
@@ -309,9 +309,9 @@ class AgentError(AgentKitError):
     def __init__(
         self,
         message: str,
-        agent_name: Optional[str] = None,
-        code: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        agent_name: str | None = None,
+        code: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         details = details or {}
         if agent_name:
@@ -366,8 +366,8 @@ class MemoryError(AgentKitError):
     def __init__(
         self,
         message: str,
-        code: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        code: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message, code=code or "MEMORY_ERROR", details=details)
 
@@ -375,7 +375,7 @@ class MemoryError(AgentKitError):
 class MemoryStorageError(MemoryError):
     """Raised when memory storage operation fails."""
 
-    def __init__(self, operation: str, original_error: Optional[Exception] = None) -> None:
+    def __init__(self, operation: str, original_error: Exception | None = None) -> None:
         details = {"operation": operation}
         if original_error:
             details["original_error"] = str(original_error)
@@ -397,8 +397,8 @@ class OrchestrationError(AgentKitError):
     def __init__(
         self,
         message: str,
-        code: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        code: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message, code=code or "ORCHESTRATION_ERROR", details=details)
 
@@ -409,8 +409,8 @@ class WorkflowError(OrchestrationError):
     def __init__(
         self,
         workflow_name: str,
-        step: Optional[str] = None,
-        original_error: Optional[Exception] = None,
+        step: str | None = None,
+        original_error: Exception | None = None,
     ) -> None:
         details = {"workflow_name": workflow_name}
         if step:

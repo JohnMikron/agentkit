@@ -11,12 +11,16 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentkit.core.agent import Agent
-from agentkit.core.types import AgentResult
+from agentkit.core.types import AgentResult, AgentState
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from agentkit.core.agent import Agent
 
 
 class StepStatus(str, Enum):
@@ -56,15 +60,29 @@ class Step:
     name: str
     agent: Agent
     prompt_template: str = "{{ input }}"
-    timeout: Optional[float] = None
+    timeout: float | None = None
     retry_count: int = 0
-    on_enter: Optional[Callable[[Dict[str, Any]], None]] = None
-    on_exit: Optional[Callable[[AgentResult], None]] = None
+    on_enter: Callable[[dict[str, Any]], None] | None = None
+    on_exit: Callable[[AgentResult], None] | None = None
 
     # Runtime state
     status: StepStatus = StepStatus.PENDING
-    result: Optional[AgentResult] = None
+    result: AgentResult | None = None
     attempts: int = 0
+
+
+@dataclass
+class ParallelStep(Step):
+    """
+    A workflow step that executes multiple agents concurrently.
+    """
+    agents: dict[str, Agent] = field(default_factory=dict)
+    prompt_templates: dict[str, str] = field(default_factory=dict)
+    results: dict[str, AgentResult] = field(default_factory=dict)
+
+    # Dummy initializers since Step fields must be populated
+    agent: Agent | None = None
+    prompt_template: str = ""
 
 
 @dataclass
@@ -82,7 +100,18 @@ class Transition:
     from_step: str
     to_step: str
     type: TransitionType = TransitionType.ALWAYS
-    condition: Optional[Callable[[AgentResult], bool]] = None
+    condition: Callable[[AgentResult], bool] | None = None
+
+
+class WorkflowContext(BaseModel):
+    """Strongly typed context for workflow execution."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    input: Any = None
+
+    def get_step_result(self, step_name: str) -> AgentResult | None:
+        """Fetch a specific step's resulting AgentResult directly."""
+        return getattr(self, f"{step_name}_result_obj", None)
 
 
 class WorkflowState(BaseModel):
@@ -90,10 +119,10 @@ class WorkflowState(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    current_step: Optional[str] = None
-    completed_steps: List[str] = Field(default_factory=list)
-    step_results: Dict[str, AgentResult] = Field(default_factory=dict)
-    context: Dict[str, Any] = Field(default_factory=dict)
+    current_step: str | None = None
+    completed_steps: list[str] = Field(default_factory=list)
+    step_results: dict[str, AgentResult] = Field(default_factory=dict)
+    context: WorkflowContext = Field(default_factory=WorkflowContext)
     iterations: int = 0
 
 
@@ -106,7 +135,7 @@ class WorkflowResult(BaseModel):
     final_output: str = ""
     state: WorkflowState = Field(default_factory=WorkflowState)
     latency_ms: float = 0.0
-    errors: List[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
 
 
 class Workflow:
@@ -139,20 +168,20 @@ class Workflow:
         self.max_iterations = max_iterations
         self.timeout = timeout
 
-        self._steps: Dict[str, Step] = {}
-        self._transitions: Dict[str, List[Transition]] = {}
-        self._entry_step: Optional[str] = None
+        self._steps: dict[str, Step] = {}
+        self._transitions: dict[str, list[Transition]] = {}
+        self._entry_step: str | None = None
 
     def add_step(
         self,
         name: str,
         agent: Agent,
         prompt_template: str = "{{ input }}",
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
         retry_count: int = 0,
-        on_enter: Optional[Callable] = None,
-        on_exit: Optional[Callable] = None,
-    ) -> "Workflow":
+        on_enter: Callable[[WorkflowContext], None] | None = None,
+        on_exit: Callable[[AgentResult], None] | None = None,
+    ) -> Workflow:
         """
         Add a step to the workflow.
 
@@ -173,13 +202,49 @@ class Workflow:
 
         return self
 
+    def add_parallel_step(
+        self,
+        name: str,
+        agents: dict[str, Agent],
+        prompt_templates: dict[str, str],
+        timeout: float | None = None,
+        retry_count: int = 0,
+        on_enter: Callable | None = None,
+        on_exit: Callable | None = None,
+    ) -> Workflow:
+        """
+        Add a parallel execution step to the workflow.
+
+        Args:
+            name: Name of the step
+            agents: Mapping of sub-task names to Agents
+            prompt_templates: Mapping of sub-task names to prompt templates
+        """
+        self._steps[name] = ParallelStep(
+            name=name,
+            agents=agents,
+            prompt_templates=prompt_templates,
+            timeout=timeout,
+            retry_count=retry_count,
+            on_enter=on_enter,
+            on_exit=on_exit,
+            # Dummy fields required by inheritance
+            agent=None,
+            prompt_template="",
+        )
+
+        if self._entry_step is None:
+            self._entry_step = name
+
+        return self
+
     def add_transition(
         self,
         from_step: str,
         to_step: str,
         type: TransitionType = TransitionType.ON_SUCCESS,
-        condition: Optional[Callable[[AgentResult], bool]] = None,
-    ) -> "Workflow":
+        condition: Callable[[AgentResult], bool] | None = None,
+    ) -> Workflow:
         """
         Add a transition between steps.
 
@@ -197,21 +262,21 @@ class Workflow:
 
         return self
 
-    def set_entry(self, step_name: str) -> "Workflow":
+    def set_entry(self, step_name: str) -> Workflow:
         """Set the entry point for the workflow."""
         if step_name not in self._steps:
             raise ValueError(f"Step '{step_name}' not found")
         self._entry_step = step_name
         return self
 
-    def _render_prompt(self, template: str, context: Dict[str, Any]) -> str:
+    def _render_prompt(self, template: str, context: WorkflowContext) -> str:
         """Render a Jinja2 template with context."""
         from jinja2 import Template
 
         tmpl = Template(template)
-        return tmpl.render(**context)
+        return tmpl.render(**context.model_dump())
 
-    def _get_next_step(self, current: str, result: AgentResult) -> Optional[str]:
+    def _get_next_step(self, current: str, result: AgentResult) -> str | None:
         """Determine the next step based on transitions."""
         transitions = self._transitions.get(current, [])
 
@@ -219,13 +284,12 @@ class Workflow:
             # Check transition type
             if transition.type == TransitionType.ALWAYS:
                 pass
-            elif transition.type == TransitionType.ON_SUCCESS and not result.success:
+            elif (
+                (transition.type == TransitionType.ON_SUCCESS and not result.success)
+                or (transition.type == TransitionType.ON_FAILURE and result.success)
+                or (transition.type == TransitionType.CONDITIONAL and transition.condition and not transition.condition(result))
+            ):
                 continue
-            elif transition.type == TransitionType.ON_FAILURE and result.success:
-                continue
-            elif transition.type == TransitionType.CONDITIONAL:
-                if transition.condition and not transition.condition(result):
-                    continue
 
             return transition.to_step
 
@@ -233,8 +297,8 @@ class Workflow:
 
     async def arun(
         self,
-        input: Union[str, Dict[str, Any]],
-        context: Optional[Dict[str, Any]] = None,
+        input: str | dict[str, Any],
+        context: dict[str, Any] | None = None,
     ) -> WorkflowResult:
         """
         Execute the workflow asynchronously.
@@ -255,17 +319,23 @@ class Workflow:
             )
 
         # Initialize state
+        initial_context = WorkflowContext()
+        if context:
+            for k, v in context.items():
+                setattr(initial_context, k, v)
+
         state = WorkflowState(
             current_step=self._entry_step,
-            context=context or {},
+            context=initial_context,
         )
 
         if isinstance(input, str):
-            state.context["input"] = input
+            state.context.input = input
         else:
-            state.context.update(input)
+            for k, v in input.items():
+                setattr(state.context, k, v)
 
-        errors: List[str] = []
+        errors: list[str] = []
 
         try:
             while state.current_step and state.iterations < self.max_iterations:
@@ -294,23 +364,72 @@ class Workflow:
                     step.status = StepStatus.FAILED
                     break
 
-                # Execute agent with retries
+                # Execute agent with retries using tenacity
                 result = None
-                for attempt in range(step.retry_count + 1):
-                    step.attempts = attempt + 1
+                import tenacity
 
-                    try:
-                        result = await step.agent.arun(prompt)
-                        if result.success:
-                            break
-                    except Exception as e:
-                        errors.append(f"Step '{step_name}' attempt {attempt + 1} failed: {e}")
-                        if attempt < step.retry_count:
-                            await asyncio.sleep(1.0)  # Brief delay before retry
+                try:
+                    async for attempt in tenacity.AsyncRetrying(
+                        stop=tenacity.stop_after_attempt(step.retry_count + 1),
+                        wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
+                        reraise=True,
+                    ):
+                        with attempt:
+                            step.attempts = attempt.retry_state.attempt_number
+                            try:
+                                if isinstance(step, ParallelStep):
+                                    # Execute parallel step
+                                    tasks = []
+                                    keys = list(step.agents.keys())
+                                    for key in keys:
+                                        agent_obj = step.agents[key]
+                                        template = step.prompt_templates.get(key, "{{ input }}")
+                                        agent_prompt = self._render_prompt(template, state.context)
+                                        tasks.append(agent_obj.arun(agent_prompt))
 
-                if result is None:
+                                    # Run conceptually in parallel
+                                    raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                                    has_failure = False
+                                    combined_content = {}
+                                    for key, r in zip(keys, raw_results, strict=False):
+                                        if isinstance(r, Exception):
+                                            has_failure = True
+                                            combined_content[key] = f"ERROR: {r!s}"
+                                        elif not r.success:
+                                            has_failure = True
+                                            combined_content[key] = f"FAILED: {r.error}"
+                                        else:
+                                            combined_content[key] = r.content
+                                            step.results[key] = r
+
+                                    import json
+                                    result = AgentResult(
+                                        success=not has_failure,
+                                        content=json.dumps(combined_content),
+                                        state=AgentState.COMPLETED if not has_failure else AgentState.FAILED,
+                                        error="One or more parallel agents failed" if has_failure else None
+                                    )
+
+                                    if has_failure:
+                                        raise Exception("Parallel step reported failures")
+
+                                else:
+                                    # Execute single step
+                                    result = await step.agent.arun(prompt)
+                                    if not result.success:
+                                        raise Exception(str(result.error) if hasattr(result, "error") else "Agent execution reported failure")
+                            except Exception as e:
+                                errors.append(f"Step '{step_name}' attempt {step.attempts} failed: {e}")
+                                raise
+                except Exception:
                     step.status = StepStatus.FAILED
-                    step.result = AgentResult(success=False, error="All attempts failed")
+                    step.result = AgentResult(
+                        success=False,
+                        content="",
+                        state=AgentState.FAILED,
+                        error="All attempts failed"
+                    )
                     break
 
                 step.result = result
@@ -318,7 +437,8 @@ class Workflow:
 
                 # Store result in context
                 state.step_results[step_name] = result
-                state.context[f"{step_name}_result"] = result.content
+                setattr(state.context, f"{step_name}_result", result.content)
+                setattr(state.context, f"{step_name}_result_obj", result)
 
                 # Call on_exit callback
                 if step.on_exit:
@@ -338,7 +458,7 @@ class Workflow:
                     break
 
         except Exception as e:
-            errors.append(f"Workflow error: {str(e)}")
+            errors.append(f"Workflow error: {e!s}")
 
         # Get final output from last completed step
         final_output = ""
@@ -357,8 +477,8 @@ class Workflow:
 
     def run(
         self,
-        input: Union[str, Dict[str, Any]],
-        context: Optional[Dict[str, Any]] = None,
+        input: str | dict[str, Any],
+        context: dict[str, Any] | None = None,
     ) -> WorkflowResult:
         """Execute the workflow synchronously."""
         return asyncio.run(self.arun(input, context))
@@ -368,7 +488,7 @@ class Workflow:
         lines = ["graph TD"]
 
         # Add steps
-        for name, step in self._steps.items():
+        for name, _step in self._steps.items():
             lines.append(f"    {name}[{name}]")
 
         # Add transitions

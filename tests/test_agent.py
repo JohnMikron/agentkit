@@ -178,7 +178,7 @@ class TestAgentConfig:
         """Test default configuration values."""
         config = AgentConfig()
         assert config.name == "agent"
-        assert config.model == "gpt-4o-mini"
+        assert config.model == "gpt-5.3-chat-latest"
         assert config.temperature == 0.7
         assert config.max_iterations == 10
 

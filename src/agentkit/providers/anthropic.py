@@ -9,13 +9,17 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Any, AsyncIterator, Dict, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from agentkit.core.exceptions import MissingAPIKeyError, ProviderAuthenticationError, ProviderError, ProviderRateLimitError, ProviderResponseError
+from agentkit.core.exceptions import (
+    MissingAPIKeyError,
+    ProviderAuthenticationError,
+    ProviderError,
+    ProviderRateLimitError,
+)
 from agentkit.core.types import (
-    FinishReason,
     LLMResponse,
     Message,
     Role,
@@ -23,6 +27,9 @@ from agentkit.core.types import (
     ToolDefinition,
 )
 from agentkit.providers.base import LLMProvider
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator
 
 
 class AnthropicProvider(LLMProvider):
@@ -42,8 +49,8 @@ class AnthropicProvider(LLMProvider):
     def __init__(
         self,
         model: str = "claude-3-5-sonnet-latest",
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         timeout: float = 60.0,
@@ -61,7 +68,7 @@ class AnthropicProvider(LLMProvider):
         self._client = httpx.Client(timeout=timeout)
         self._async_client = httpx.AsyncClient(timeout=timeout)
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         """Build request headers."""
         return {
             "x-api-key": self.api_key,
@@ -69,14 +76,14 @@ class AnthropicProvider(LLMProvider):
             "Content-Type": "application/json",
         }
 
-    def _convert_messages(self, messages: List[Message]) -> tuple[str, List[Dict[str, Any]]]:
+    def _convert_messages(self, messages: list[Message]) -> tuple[str, list[dict[str, Any]]]:
         """
         Convert messages to Anthropic format.
 
         Anthropic uses a separate system prompt and messages list.
         """
         system_prompt = ""
-        converted: List[Dict[str, Any]] = []
+        converted: list[dict[str, Any]] = []
 
         for msg in messages:
             if msg.role == Role.SYSTEM:
@@ -84,7 +91,7 @@ class AnthropicProvider(LLMProvider):
             elif msg.role == Role.USER:
                 converted.append({"role": "user", "content": msg.content})
             elif msg.role == Role.ASSISTANT:
-                content_blocks: List[Dict[str, Any]] = []
+                content_blocks: list[dict[str, Any]] = []
                 if msg.content:
                     content_blocks.append({"type": "text", "text": msg.content})
                 if msg.tool_calls:
@@ -112,7 +119,7 @@ class AnthropicProvider(LLMProvider):
 
         return system_prompt, converted
 
-    def _convert_tools(self, tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
+    def _convert_tools(self, tools: list[ToolDefinition]) -> list[dict[str, Any]]:
         """Convert tools to Anthropic format."""
         return [
             {
@@ -125,14 +132,14 @@ class AnthropicProvider(LLMProvider):
 
     def _build_request_body(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build request body for Anthropic API."""
         system_prompt, converted_messages = self._convert_messages(messages)
 
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "model": self.model,
             "messages": converted_messages,
             "max_tokens": kwargs.get("max_tokens", self.max_tokens or 4096),
@@ -155,7 +162,7 @@ class AnthropicProvider(LLMProvider):
 
         return body
 
-    def _parse_response(self, response_data: Dict[str, Any]) -> LLMResponse:
+    def _parse_response(self, response_data: dict[str, Any]) -> LLMResponse:
         """Parse Anthropic API response."""
         content_blocks = response_data.get("content", [])
         text_content = ""
@@ -218,8 +225,8 @@ class AnthropicProvider(LLMProvider):
 
     def complete(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion synchronously."""
@@ -242,8 +249,8 @@ class AnthropicProvider(LLMProvider):
 
     async def acomplete(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion asynchronously."""
@@ -266,8 +273,8 @@ class AnthropicProvider(LLMProvider):
 
     def stream(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> Iterator[str]:
         """Stream completion synchronously."""
@@ -287,16 +294,15 @@ class AnthropicProvider(LLMProvider):
                 if line.startswith("data: "):
                     try:
                         data = json.loads(line[6:])
-                        if data.get("type") == "content_block_delta":
-                            if text := data.get("delta", {}).get("text"):
-                                yield text
+                        if data.get("type") == "content_block_delta" and (text := data.get("delta", {}).get("text")):
+                            yield text
                     except (json.JSONDecodeError, KeyError):
                         continue
 
     async def astream(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         """Stream completion asynchronously."""
@@ -316,9 +322,8 @@ class AnthropicProvider(LLMProvider):
                 if line.startswith("data: "):
                     try:
                         data = json.loads(line[6:])
-                        if data.get("type") == "content_block_delta":
-                            if text := data.get("delta", {}).get("text"):
-                                yield text
+                        if data.get("type") == "content_block_delta" and (text := data.get("delta", {}).get("text")):
+                            yield text
                     except (json.JSONDecodeError, KeyError):
                         continue
 

@@ -10,9 +10,7 @@ This module provides a comprehensive configuration system with:
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
-from typing import Any, Dict, List, Literal, Optional, Set, Union
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,10 +34,10 @@ class LLMSettings(BaseSettings):
     )
 
     # API Keys
-    openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
-    anthropic_api_key: Optional[str] = Field(default=None, description="Anthropic API key")
-    google_api_key: Optional[str] = Field(default=None, description="Google AI API key")
-    mistral_api_key: Optional[str] = Field(default=None, description="Mistral API key")
+    openai_api_key: str | None = Field(default=None, description="OpenAI API key")
+    anthropic_api_key: str | None = Field(default=None, description="Anthropic API key")
+    google_api_key: str | None = Field(default=None, description="Google AI API key")
+    mistral_api_key: str | None = Field(default=None, description="Mistral API key")
 
     # Default model configuration
     default_model: str = Field(
@@ -53,11 +51,11 @@ class LLMSettings(BaseSettings):
 
     # Model parameters
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Sampling temperature")
-    max_tokens: Optional[int] = Field(default=None, ge=1, description="Maximum tokens in response")
+    max_tokens: int | None = Field(default=None, ge=1, description="Maximum tokens in response")
     top_p: float = Field(default=1.0, ge=0.0, le=1.0, description="Nucleus sampling parameter")
     frequency_penalty: float = Field(default=0.0, ge=-2.0, le=2.0)
     presence_penalty: float = Field(default=0.0, ge=-2.0, le=2.0)
-    stop_sequences: Optional[List[str]] = Field(default=None, description="Stop sequences")
+    stop_sequences: list[str] | None = Field(default=None, description="Stop sequences")
 
     # Timeout settings
     request_timeout: float = Field(default=60.0, ge=1.0, description="Request timeout in seconds")
@@ -69,8 +67,8 @@ class LLMSettings(BaseSettings):
     retry_multiplier: float = Field(default=2.0, ge=1.0, description="Exponential backoff multiplier")
 
     # Rate limiting
-    requests_per_minute: Optional[int] = Field(default=None, description="Rate limit for requests")
-    tokens_per_minute: Optional[int] = Field(default=None, description="Rate limit for tokens")
+    requests_per_minute: int | None = Field(default=None, description="Rate limit for requests")
+    tokens_per_minute: int | None = Field(default=None, description="Rate limit for tokens")
 
     @field_validator("default_model")
     @classmethod
@@ -80,7 +78,7 @@ class LLMSettings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def check_api_keys(self) -> "LLMSettings":
+    def check_api_keys(self) -> LLMSettings:
         """Check that at least one API key is set if using cloud providers."""
         # This is just a warning, not an error - local models don't need keys
         return self
@@ -112,7 +110,7 @@ class AgentSettings(BaseSettings):
     # Memory settings
     memory_enabled: bool = Field(default=False, description="Enable conversation memory")
     memory_max_messages: int = Field(default=100, ge=1, description="Maximum messages in memory")
-    memory_file: Optional[str] = Field(default=None, description="File path for persistent memory")
+    memory_file: str | None = Field(default=None, description="File path for persistent memory")
 
     # Streaming
     streaming_enabled: bool = Field(default=True, description="Enable streaming responses")
@@ -140,7 +138,7 @@ class CacheSettings(BaseSettings):
     max_size: int = Field(default=1000, ge=1, description="Maximum cache entries")
 
     # Redis settings (optional)
-    redis_url: Optional[str] = Field(default=None, description="Redis URL for distributed cache")
+    redis_url: str | None = Field(default=None, description="Redis URL for distributed cache")
     redis_prefix: str = Field(default="agentkit:", description="Redis key prefix")
 
     # Semantic cache
@@ -164,12 +162,12 @@ class ObservabilitySettings(BaseSettings):
     # Logging
     log_level: str = Field(default="INFO", description="Log level")
     log_format: str = Field(default="json", description="Log format (json or text)")
-    log_file: Optional[str] = Field(default=None, description="Log file path")
+    log_file: str | None = Field(default=None, description="Log file path")
 
     # Tracing
     tracing_enabled: bool = Field(default=False, description="Enable distributed tracing")
     tracing_exporter: str = Field(default="otlp", description="Trace exporter (otlp, jaeger, zipkin)")
-    tracing_endpoint: Optional[str] = Field(default=None, description="Trace endpoint URL")
+    tracing_endpoint: str | None = Field(default=None, description="Trace endpoint URL")
 
     # Metrics
     metrics_enabled: bool = Field(default=False, description="Enable metrics collection")
@@ -248,21 +246,21 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode")
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         """Load settings from environment variables."""
         return cls()
 
     @classmethod
-    def from_file(cls, path: str) -> "Settings":
+    def from_file(cls, path: str) -> Settings:
         """Load settings from a file."""
         import json
-
-        with open(path) as f:
+        from pathlib import Path
+        with Path(path).open() as f:
             data = json.load(f)
         return cls(**data)
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """
     Get cached settings instance.

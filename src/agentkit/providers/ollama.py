@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Any, AsyncIterator, Dict, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -23,6 +23,9 @@ from agentkit.core.types import (
     ToolDefinition,
 )
 from agentkit.providers.base import LLMProvider
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator
 
 
 class OllamaProvider(LLMProvider):
@@ -49,9 +52,9 @@ class OllamaProvider(LLMProvider):
     def __init__(
         self,
         model: str = "llama3.2",
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         timeout: float = 120.0,
         **kwargs: Any,
     ) -> None:
@@ -63,7 +66,7 @@ class OllamaProvider(LLMProvider):
         self._client = httpx.Client(timeout=timeout)
         self._async_client = httpx.AsyncClient(timeout=timeout)
 
-    def _convert_messages(self, messages: List[Message]) -> List[Dict[str, Any]]:
+    def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """Convert messages to Ollama format."""
         result = []
 
@@ -73,7 +76,7 @@ class OllamaProvider(LLMProvider):
             elif msg.role == Role.USER:
                 result.append({"role": "user", "content": msg.content})
             elif msg.role == Role.ASSISTANT:
-                ollama_msg: Dict[str, Any] = {"role": "assistant", "content": msg.content}
+                ollama_msg: dict[str, Any] = {"role": "assistant", "content": msg.content}
                 if msg.tool_calls:
                     ollama_msg["tool_calls"] = [
                         {
@@ -93,7 +96,7 @@ class OllamaProvider(LLMProvider):
 
         return result
 
-    def _convert_tools(self, tools: List[ToolDefinition]) -> List[Dict[str, Any]]:
+    def _convert_tools(self, tools: list[ToolDefinition]) -> list[dict[str, Any]]:
         """Convert tools to Ollama format."""
         return [
             {
@@ -109,12 +112,12 @@ class OllamaProvider(LLMProvider):
 
     def _build_request_body(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build request body for Ollama API."""
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "model": self.model,
             "messages": self._convert_messages(messages),
             "stream": False,
@@ -140,7 +143,7 @@ class OllamaProvider(LLMProvider):
 
         return body
 
-    def _parse_response(self, response_data: Dict[str, Any]) -> LLMResponse:
+    def _parse_response(self, response_data: dict[str, Any]) -> LLMResponse:
         """Parse Ollama API response."""
         message = response_data.get("message", {})
 
@@ -184,19 +187,19 @@ class OllamaProvider(LLMProvider):
                     "Ollama is not responding. Make sure Ollama is running (ollama serve)",
                     provider="ollama",
                 )
-        except httpx.ConnectError:
+        except httpx.ConnectError as err:
             raise ProviderError(
                 "Cannot connect to Ollama. Make sure Ollama is running:\n"
                 "  1. Install: https://ollama.ai\n"
                 "  2. Pull model: ollama pull llama3.2\n"
                 "  3. Run: ollama serve",
                 provider="ollama",
-            )
+            ) from err
 
     def complete(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion synchronously."""
@@ -217,14 +220,14 @@ class OllamaProvider(LLMProvider):
                     details={"status_code": response.status_code},
                 )
 
-        except httpx.ConnectError:
+        except httpx.ConnectError as err:
             raise ProviderError(
                 "Cannot connect to Ollama. Make sure Ollama is running:\n"
                 "  1. Install: https://ollama.ai\n"
                 "  2. Pull model: ollama pull llama3.2\n"
                 "  3. Run: ollama serve",
                 provider="ollama",
-            )
+            ) from err
 
         result = self._parse_response(response.json())
         result.latency_ms = self._measure_latency(start_time)
@@ -232,8 +235,8 @@ class OllamaProvider(LLMProvider):
 
     async def acomplete(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion asynchronously."""
@@ -254,14 +257,14 @@ class OllamaProvider(LLMProvider):
                     details={"status_code": response.status_code},
                 )
 
-        except httpx.ConnectError:
+        except httpx.ConnectError as err:
             raise ProviderError(
                 "Cannot connect to Ollama. Make sure Ollama is running:\n"
                 "  1. Install: https://ollama.ai\n"
                 "  2. Pull model: ollama pull llama3.2\n"
                 "  3. Run: ollama serve",
                 provider="ollama",
-            )
+            ) from err
 
         result = self._parse_response(response.json())
         result.latency_ms = self._measure_latency(start_time)
@@ -269,8 +272,8 @@ class OllamaProvider(LLMProvider):
 
     def stream(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> Iterator[str]:
         """Stream completion synchronously."""
@@ -291,16 +294,16 @@ class OllamaProvider(LLMProvider):
                     except json.JSONDecodeError:
                         continue
 
-        except httpx.ConnectError:
+        except httpx.ConnectError as err:
             raise ProviderError(
                 "Cannot connect to Ollama. Make sure Ollama is running.",
                 provider="ollama",
-            )
+            ) from err
 
     async def astream(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         """Stream completion asynchronously."""
@@ -321,13 +324,13 @@ class OllamaProvider(LLMProvider):
                     except json.JSONDecodeError:
                         continue
 
-        except httpx.ConnectError:
+        except httpx.ConnectError as err:
             raise ProviderError(
                 "Cannot connect to Ollama. Make sure Ollama is running.",
                 provider="ollama",
-            )
+            ) from err
 
-    def list_models(self) -> List[str]:
+    def list_models(self) -> list[str]:
         """List available models."""
         try:
             response = self._client.get(f"{self.base_url}/api/tags")

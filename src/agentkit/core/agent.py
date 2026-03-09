@@ -9,52 +9,36 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Callable, Dict, Iterator, List, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
-from tenacity import (
-    AsyncRetrying,
-    Retrying,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-)
 
-from agentkit.core.config import AgentSettings, LLMSettings, Settings, get_settings
+from agentkit.core.config import Settings, get_settings
 from agentkit.core.exceptions import (
     AgentCancelledError,
     AgentError,
     AgentMaxIterationsError,
-    AgentTimeoutError,
     MissingAPIKeyError,
     ToolError,
 )
-from agentkit.core.memory import FileStorage, InMemoryStorage, Memory, MemoryEntry
+from agentkit.core.memory import FileStorage, InMemoryStorage, Memory
 from agentkit.core.tools import Tool, ToolRegistry, get_builtin_tools
 from agentkit.core.types import (
     AgentResult,
     AgentState,
     Event,
     EventType,
-    FinishReason,
-    HookFunction,
-    LLMResponse,
     Message,
-    Role,
     ToolCall,
     ToolResult,
     Usage,
 )
-from agentkit.providers import (
-    AnthropicProvider,
-    GoogleProvider,
-    MistralProvider,
-    MockProvider,
-    OllamaProvider,
-    OpenAIProvider,
-)
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Callable, Iterator
+
+    from agentkit.providers.base import LLMProvider
 
 logger = structlog.get_logger()
 
@@ -67,16 +51,16 @@ class AgentHooks:
     """
 
     def __init__(self) -> None:
-        self._on_start: List[Callable[[Event], Any]] = []
-        self._on_end: List[Callable[[Event], Any]] = []
-        self._on_error: List[Callable[[Event], Any]] = []
-        self._on_llm_request: List[Callable[[Event], Any]] = []
-        self._on_llm_response: List[Callable[[Event], Any]] = []
-        self._on_tool_call_start: List[Callable[[Event], Any]] = []
-        self._on_tool_call_end: List[Callable[[Event], Any]] = []
-        self._on_state_change: List[Callable[[Event], Any]] = []
-        self._on_thought: List[Callable[[Event], Any]] = []
-        self._on_message: List[Callable[[Event], Any]] = []
+        self._on_start: list[Callable[[Event], Any]] = []
+        self._on_end: list[Callable[[Event], Any]] = []
+        self._on_error: list[Callable[[Event], Any]] = []
+        self._on_llm_request: list[Callable[[Event], Any]] = []
+        self._on_llm_response: list[Callable[[Event], Any]] = []
+        self._on_tool_call_start: list[Callable[[Event], Any]] = []
+        self._on_tool_call_end: list[Callable[[Event], Any]] = []
+        self._on_state_change: list[Callable[[Event], Any]] = []
+        self._on_thought: list[Callable[[Event], Any]] = []
+        self._on_message: list[Callable[[Event], Any]] = []
 
     def on_start(self, func: Callable[[Event], Any]) -> Callable[[Event], Any]:
         """Register hook for agent start."""
@@ -128,7 +112,7 @@ class AgentHooks:
         self._on_message.append(func)
         return func
 
-    def emit(self, event: Event) -> None:
+    async def emit(self, event: Event) -> None:
         """Emit an event to relevant hooks."""
         hook_map = {
             EventType.AGENT_START: self._on_start,
@@ -147,8 +131,8 @@ class AgentHooks:
             try:
                 result = hook(event)
                 if asyncio.iscoroutine(result):
-                    # Schedule coroutine to run
-                    asyncio.create_task(result)
+                    # Await coroutine to run synchronously with execution (Middleware pattern)
+                    await result
             except Exception as e:
                 logger.warning("Hook error", hook=hook.__name__, error=str(e))
 
@@ -178,18 +162,19 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(default="agent", min_length=1, max_length=100)
-    model: str = Field(default="gpt-4o-mini")
-    provider: Optional[str] = Field(default=None)
-    system_prompt: Optional[str] = Field(default=None)
+    model: str = Field(default="gpt-5.3-chat-latest")
+    provider: str = Field(default="openai")
+    system_prompt: str | None = Field(default=None)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    max_tokens: Optional[int] = Field(default=None, ge=1)
+    max_tokens: int | None = Field(default=None, ge=1)
+    max_tokens_limit: int | None = Field(default=None, ge=1)
     memory_enabled: bool = Field(default=False)
-    memory_max_entries: Optional[int] = Field(default=100)
-    memory_file: Optional[str] = Field(default=None)
+    memory_max_entries: int | None = Field(default=100)
+    memory_file: str | None = Field(default=None)
     max_iterations: int = Field(default=10, ge=1)
     max_tool_calls: int = Field(default=50, ge=1)
     timeout: float = Field(default=60.0, ge=1.0)
-    tools: Optional[List[str]] = Field(default=None)
+    tools: list[str] | None = Field(default=None)
     hooks_enabled: bool = Field(default=True)
     streaming: bool = Field(default=True)
 
@@ -230,12 +215,12 @@ class Agent:
     def __init__(
         self,
         name: str = "agent",
-        model: Optional[str] = None,
+        model: str | None = None,
         memory: bool = False,
-        system_prompt: Optional[str] = None,
-        config: Optional[AgentConfig] = None,
-        settings: Optional[Settings] = None,
-        approval_handler: Optional[Callable[[ToolCall], bool]] = None,
+        system_prompt: str | None = None,
+        config: AgentConfig | None = None,
+        settings: Settings | None = None,
+        approval_handler: Callable[[ToolCall], bool] | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -313,7 +298,7 @@ class Agent:
         return self._state
 
     @property
-    def tools(self) -> List[Tool]:
+    def tools(self) -> list[Tool]:
         """Get all registered tools."""
         return self._tools.list_tools()
 
@@ -323,54 +308,61 @@ class Agent:
         return self._total_usage
 
     @property
-    def provider(self):
+    def provider(self) -> LLMProvider:
         """Get or create the LLM provider."""
         if self._provider is None:
             self._provider = self._create_provider()
         return self._provider
 
     def _create_provider(self) -> LLMProvider:
-        """Create the appropriate LLM provider based on model name."""
+        """Create the appropriate LLM provider based on explicit configuration."""
         import os
-        model = self.config.model
+
+        from agentkit.providers.mock import MockProvider
+
+        model_str = self.config.model
+        provider_name = self.config.provider
+        model_name = model_str
+
+        # Parse from model string if prefix exists (e.g. "anthropic:claude-3")
+        if ":" in model_str:
+            prefix, rest = model_str.split(":", 1)
+            provider_name = prefix
+            model_name = rest
+
+        if not provider_name:
+            # This should technically not happen with the new default "openai"
+            # but we keep it for safety if someone passes None explicitly.
+            raise ValueError(
+                f"No provider specified for model '{model_str}'. "
+                "Please use 'provider:model' format or specify 'provider' in configuration."
+            )
+
+        provider_name = provider_name.lower()
 
         # Helper to decide if we should fallback to mock
-        def get_fallback_provider(provider_type: str, err: Exception) -> LLMProvider:
+        def get_fallback_provider(p_type: str, err: Exception) -> LLMProvider:
             if os.environ.get("AGENTKIT_DEMO_MODE") == "true":
-                logger.warning(f"{provider_type} API key missing, falling back to MockProvider")
-                return MockProvider(model=f"mock-{model}")
+                logger.warning(f"{p_type} API key missing, falling back to MockProvider")
+                return MockProvider(model=f"mock-{model_name}")
             raise err
 
-        # Check for explicit provider prefix
-        if ":" in model:
-            provider_name, model_name = model.split(":", 1)
+        try:
             if provider_name == "openai":
                 from agentkit.providers.openai import OpenAIProvider
-                try:
-                    return OpenAIProvider(model=model_name, api_key=self.settings.llm.openai_api_key, **self._provider_kwargs())
-                except MissingAPIKeyError as e:
-                    return get_fallback_provider("OpenAI", e)
-            
-            if provider_name == "anthropic" or provider_name == "claude":
-                from agentkit.providers.anthropic import AnthropicProvider
-                try:
-                    return AnthropicProvider(model=model_name, api_key=self.settings.llm.anthropic_api_key, **self._provider_kwargs())
-                except MissingAPIKeyError as e:
-                    return get_fallback_provider("Anthropic", e)
+                return OpenAIProvider(model=model_name, api_key=self.settings.llm.openai_api_key, **self._provider_kwargs())
 
-            if provider_name == "google" or provider_name == "gemini":
+            if provider_name in ("anthropic", "claude"):
+                from agentkit.providers.anthropic import AnthropicProvider
+                return AnthropicProvider(model=model_name, api_key=self.settings.llm.anthropic_api_key, **self._provider_kwargs())
+
+            if provider_name in ("google", "gemini"):
                 from agentkit.providers.google import GoogleProvider
-                try:
-                    return GoogleProvider(model=model_name, api_key=self.settings.llm.google_api_key, **self._provider_kwargs())
-                except MissingAPIKeyError as e:
-                    return get_fallback_provider("Google", e)
+                return GoogleProvider(model=model_name, api_key=self.settings.llm.google_api_key, **self._provider_kwargs())
 
             if provider_name == "mistral":
                 from agentkit.providers.mistral import MistralProvider
-                try:
-                    return MistralProvider(model=model_name, api_key=self.settings.llm.mistral_api_key, **self._provider_kwargs())
-                except MissingAPIKeyError as e:
-                    return get_fallback_provider("Mistral", e)
+                return MistralProvider(model=model_name, api_key=self.settings.llm.mistral_api_key, **self._provider_kwargs())
 
             if provider_name in ("local", "ollama"):
                 from agentkit.providers.ollama import OllamaProvider
@@ -379,48 +371,12 @@ class Agent:
             if provider_name == "mock":
                 return MockProvider(model=model_name, **self._provider_kwargs())
 
-        # Auto-detect provider from model name
-        model_lower = model.lower()
-        if any(x in model_lower for x in ["gpt", "o1", "o3"]):
-            from agentkit.providers.openai import OpenAIProvider
-            try:
-                return OpenAIProvider(model=model, api_key=self.settings.llm.openai_api_key, **self._provider_kwargs())
-            except MissingAPIKeyError as e:
-                return get_fallback_provider("OpenAI", e)
-
-        if "claude" in model_lower:
-            from agentkit.providers.anthropic import AnthropicProvider
-            try:
-                return AnthropicProvider(model=model, api_key=self.settings.llm.anthropic_api_key, **self._provider_kwargs())
-            except MissingAPIKeyError as e:
-                return get_fallback_provider("Anthropic", e)
-
-        if "gemini" in model_lower:
-            from agentkit.providers.google import GoogleProvider
-            try:
-                return GoogleProvider(model=model, api_key=self.settings.llm.google_api_key, **self._provider_kwargs())
-            except MissingAPIKeyError as e:
-                return get_fallback_provider("Google", e)
-
-        if "mistral" in model_lower or "codestral" in model_lower:
-            from agentkit.providers.mistral import MistralProvider
-            try:
-                return MistralProvider(model=model, api_key=self.settings.llm.mistral_api_key, **self._provider_kwargs())
-            except MissingAPIKeyError as e:
-                return get_fallback_provider("Mistral", e)
-        
-        if "llama" in model_lower or "phi" in model_lower or "qwen" in model_lower:
-            from agentkit.providers.ollama import OllamaProvider
-            return OllamaProvider(model=model, **self._provider_kwargs())
-
-        # Default to OpenAI
-        from agentkit.providers.openai import OpenAIProvider
-        try:
-            return OpenAIProvider(model=model, api_key=self.settings.llm.openai_api_key, **self._provider_kwargs())
         except MissingAPIKeyError as e:
-            return get_fallback_provider("OpenAI", e)
+            return get_fallback_provider(provider_name.capitalize(), e)
 
-    def _provider_kwargs(self) -> Dict[str, Any]:
+        raise ValueError(f"Unknown provider or unsupported model configuration: {provider_name}")
+
+    def _provider_kwargs(self) -> dict[str, Any]:
         """Get standard provider kwargs."""
         return {
             "temperature": self.config.temperature,
@@ -428,8 +384,8 @@ class Agent:
             "timeout": self.config.timeout,
         }
 
-    def _set_state(self, new_state: AgentState) -> None:
-        """Update agent state and emit event."""
+    async def _aset_state(self, new_state: AgentState) -> None:
+        """Update agent state and emit event asynchronously."""
         old_state = self._state
         self._state = new_state
 
@@ -439,17 +395,17 @@ class Agent:
                 agent_name=self.name,
                 data={"old_state": old_state.value, "new_state": new_state.value},
             )
-            self._hooks.emit(event)
+            await self._hooks.emit(event)
 
-    def _emit(self, event_type: EventType, data: Optional[Dict[str, Any]] = None) -> None:
-        """Emit an event."""
+    async def _aemit(self, event_type: EventType, data: dict[str, Any] | None = None) -> None:
+        """Emit an event asynchronously."""
         if self.config.hooks_enabled:
             event = Event(
                 type=event_type,
                 agent_name=self.name,
                 data=data or {},
             )
-            self._hooks.emit(event)
+            await self._hooks.emit(event)
 
     # =========================================================================
     # Tool Management
@@ -457,12 +413,12 @@ class Agent:
 
     def tool(
         self,
-        func: Optional[Callable[..., Any]] = None,
+        func: Callable[..., Any] | None = None,
         *,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         strict: bool = False,
-    ) -> Union[Tool, Callable[[Callable[..., Any]], Tool]]:
+    ) -> Tool | Callable[[Callable[..., Any]], Tool]:
         """
         Decorator to add a tool to the agent.
 
@@ -489,7 +445,7 @@ class Agent:
         def decorator(f: Callable[..., Any]) -> Tool:
             # Only pass description if we have something meaningful; otherwise
             # let Tool.__init__ infer it (avoids None validation issues).
-            desc_val: Optional[str] = None
+            desc_val: str | None = None
             if description is not None:
                 desc_val = description
             elif f.__doc__:
@@ -508,7 +464,7 @@ class Agent:
             return decorator(func)
         return decorator
 
-    def add_tool(self, tool: Tool) -> "Agent":
+    def add_tool(self, tool: Tool) -> Agent:
         """
         Add an existing Tool instance.
 
@@ -517,7 +473,7 @@ class Agent:
         self._tools.add(tool)
         return self
 
-    def add_tools(self, tools: List[Tool]) -> "Agent":
+    def add_tools(self, tools: list[Tool]) -> Agent:
         """
         Add multiple Tool instances.
 
@@ -577,7 +533,7 @@ class Agent:
     # Core Execution
     # =========================================================================
 
-    def _build_messages(self, user_input: str) -> List[Message]:
+    def _build_messages(self, user_input: str) -> list[Message]:
         """Build message list for LLM."""
         messages = []
 
@@ -595,65 +551,15 @@ class Agent:
 
         return messages
 
-    def _execute_tool_calls(self, tool_calls: List[ToolCall]) -> List[ToolResult]:
-        """Execute tool calls and return results."""
-        results = []
 
-        for tc in tool_calls:
-            args = tc.parse_arguments()
-
-            # Emit start event
-            self._emit(
-                EventType.TOOL_CALL_START,
-                {"tool_name": tc.name, "arguments": args, "tool_call_id": tc.id},
-            )
-
-            if self._approval_handler and not self._approval_handler(tc):
-                results.append(ToolResult(
-                    tool_call_id=tc.id,
-                    name=tc.name,
-                    content="Error: Human approval denied",
-                    is_error=True,
-                ))
-                self._emit(
-                    EventType.TOOL_CALL_END,
-                    {"tool_name": tc.name, "tool_call_id": tc.id, "is_error": True},
-                )
-                continue
-
-            try:
-                result = self._tools.execute(tc.name, args)
-                results.append(ToolResult(
-                    tool_call_id=tc.id,
-                    name=tc.name,
-                    content=result.content,
-                    is_error=result.is_error,
-                    execution_time_ms=result.execution_time_ms,
-                ))
-            except ToolError as e:
-                results.append(ToolResult(
-                    tool_call_id=tc.id,
-                    name=tc.name,
-                    content=f"Error: {e.message}",
-                    is_error=True,
-                ))
-
-            # Emit end event
-            self._emit(
-                EventType.TOOL_CALL_END,
-                {"tool_name": tc.name, "tool_call_id": tc.id, "is_error": results[-1].is_error},
-            )
-
-        return results
-
-    async def _aexecute_tool_calls(self, tool_calls: List[ToolCall]) -> List[ToolResult]:
+    async def _aexecute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
         """Execute tool calls asynchronously."""
         results = []
 
         for tc in tool_calls:
             args = tc.parse_arguments()
 
-            self._emit(
+            await self._aemit(
                 EventType.TOOL_CALL_START,
                 {"tool_name": tc.name, "arguments": args, "tool_call_id": tc.id},
             )
@@ -665,7 +571,7 @@ class Agent:
                     content="Error: Human approval denied",
                     is_error=True,
                 ))
-                self._emit(
+                await self._aemit(
                     EventType.TOOL_CALL_END,
                     {"tool_name": tc.name, "tool_call_id": tc.id, "is_error": True},
                 )
@@ -677,6 +583,7 @@ class Agent:
                     tool_call_id=tc.id,
                     name=tc.name,
                     content=result.content,
+                    raw_result=result.raw_result,
                     is_error=result.is_error,
                     execution_time_ms=result.execution_time_ms,
                 ))
@@ -688,7 +595,7 @@ class Agent:
                     is_error=True,
                 ))
 
-            self._emit(
+            await self._aemit(
                 EventType.TOOL_CALL_END,
                 {"tool_name": tc.name, "tool_call_id": tc.id, "is_error": results[-1].is_error},
             )
@@ -698,7 +605,7 @@ class Agent:
     def run(
         self,
         prompt: str,
-        tools: Optional[List[Tool]] = None,
+        tools: list[Tool] | None = None,
         **kwargs: Any,
     ) -> str:
         """
@@ -714,12 +621,12 @@ class Agent:
         """
         result = asyncio.run(self.arun(prompt, tools=tools, **kwargs))
         return result.content
-        
+
     def run_structured(
         self,
         prompt: str,
-        response_model: Type[BaseModel],
-        tools: Optional[List[Tool]] = None,
+        response_model: type[BaseModel],
+        tools: list[Tool] | None = None,
         **kwargs: Any,
     ) -> BaseModel:
         """
@@ -730,8 +637,8 @@ class Agent:
     async def arun_structured(
         self,
         prompt: str,
-        response_model: Type[BaseModel],
-        tools: Optional[List[Tool]] = None,
+        response_model: type[BaseModel],
+        tools: list[Tool] | None = None,
         **kwargs: Any,
     ) -> BaseModel:
         """
@@ -739,35 +646,36 @@ class Agent:
         Falls back to JSON prompting and validation if the provider lacks native structured support.
         """
         import json
-        
+        import re
+
         # We append a structured output instruction to the prompt context.
         schema = response_model.model_json_schema()
         structured_prompt = f"{prompt}\n\nYou MUST respond entirely in valid JSON format matching this schema:\n{json.dumps(schema, indent=2)}"
-        
-        if self._memory and getattr(self._memory, "auto_summary", False) and getattr(self._memory, "max_messages", None):
-            if len(self._memory) > self._memory.max_messages:
-                await self._memory.asummarize(self.provider.acomplete)
-                
+
+        if self._memory and getattr(self._memory, "auto_summary", False) and getattr(self._memory, "max_messages", None) and len(self._memory) > self._memory.max_messages:
+            await self._memory.asummarize(self.provider.acomplete)
+
         result = await self.arun(structured_prompt, tools=tools, **kwargs)
-        
-        # Clean the output in case it wrapped in markdown code blocks
-        clean_json = result.content.strip()
-        if clean_json.startswith("```json"):
-            clean_json = clean_json[7:]
-        if clean_json.startswith("```"):
-            clean_json = clean_json[3:]
-        if clean_json.endswith("```"):
-            clean_json = clean_json[:-3]
-            
+
+        # Robust JSON extraction using Regex
+        content = result.content
+        match = re.search(r'(\{[\s\S]*\}|\[[\s\S]*\])', content)
+        if not match:
+            raise AgentError(
+                f"Could not extract JSON from agent response.\nRaw Response: {content}"
+            )
+
+        json_str = match.group(1)
+
         try:
-            return response_model.model_validate_json(clean_json.strip())
+            return response_model.model_validate_json(json_str)
         except Exception as e:
-            raise AgentError(f"Failed to parse structured output: {str(e)}\nRaw Response: {result.content}")
+            raise AgentError(f"Failed to parse structured output: {e!s}\nExtracted JSON: {json_str}\nRaw Response: {content}") from e
 
     async def arun(
         self,
         prompt: str,
-        tools: Optional[List[Tool]] = None,
+        tools: list[Tool] | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         """
@@ -783,23 +691,22 @@ class Agent:
         """
         start_time = time.perf_counter()
         self._cancelled = False
-        self._set_state(AgentState.RUNNING)
+        await self._aset_state(AgentState.RUNNING)
 
         # Emit start event
-        self._emit(EventType.AGENT_START, {"prompt": prompt[:200]})
+        await self._aemit(EventType.AGENT_START, {"prompt": prompt[:200]})
 
-        all_tool_calls: List[ToolCall] = []
-        all_tool_results: List[ToolResult] = []
-        all_messages: List[Message] = []
+        all_tool_calls: list[ToolCall] = []
+        all_tool_results: list[ToolResult] = []
+        all_messages: list[Message] = []
         total_usage = Usage()
         iterations = 0
-        error_msg: Optional[str] = None
+        error_msg: str | None = None
 
         try:
             # Auto-summarize memory if needed
-            if self._memory and getattr(self._memory, "auto_summary", False) and getattr(self._memory, "max_messages", None):
-                if len(self._memory) > self._memory.max_messages:
-                    await self._memory.asummarize(self.provider.acomplete)
+            if self._memory and getattr(self._memory, "auto_summary", False) and getattr(self._memory, "max_messages", None) and len(self._memory) > self._memory.max_messages:
+                await self._memory.asummarize(self.provider.acomplete)
 
             # Build initial messages
             messages = self._build_messages(prompt)
@@ -818,7 +725,7 @@ class Agent:
                 iterations += 1
 
                 # Emit LLM request event
-                self._emit(EventType.LLM_REQUEST, {"iteration": iterations})
+                await self._aemit(EventType.LLM_REQUEST, {"iteration": iterations})
 
                 # Call LLM with retry
                 response = await self.provider.acomplete(
@@ -830,8 +737,12 @@ class Agent:
                 # Track usage
                 total_usage = total_usage + response.usage
 
+                # Check maximum budget
+                if self.config.max_tokens_limit is not None and getattr(total_usage, "total_tokens", 0) > self.config.max_tokens_limit:
+                    raise AgentError(f"Token limit exceeded: used {total_usage.total_tokens}, limit {self.config.max_tokens_limit}")
+
                 # Emit LLM response event
-                self._emit(
+                await self._aemit(
                     EventType.LLM_RESPONSE,
                     {
                         "has_tool_calls": response.has_tool_calls,
@@ -841,7 +752,7 @@ class Agent:
 
                 # Handle tool calls
                 if response.has_tool_calls:
-                    self._set_state(AgentState.EXECUTING_TOOLS)
+                    await self._aset_state(AgentState.EXECUTING_TOOLS)
 
                     # Add assistant message with tool calls
                     assistant_msg = Message.assistant(
@@ -868,7 +779,7 @@ class Agent:
                         messages.append(msg)
                         all_messages.append(msg)
 
-                    self._set_state(AgentState.RUNNING)
+                    await self._aset_state(AgentState.RUNNING)
 
                 else:
                     # No tool calls - we have a final response
@@ -885,7 +796,7 @@ class Agent:
                         self._memory.add_assistant_message(final_content)
 
                     self._total_usage = self._total_usage + total_usage
-                    self._set_state(AgentState.COMPLETED)
+                    await self._aset_state(AgentState.COMPLETED)
 
                     latency = (time.perf_counter() - start_time) * 1000
 
@@ -901,7 +812,7 @@ class Agent:
                         latency_ms=latency,
                     )
 
-                    self._emit(EventType.AGENT_END, {"success": True, "iterations": iterations})
+                    await self._aemit(EventType.AGENT_END, {"success": True, "iterations": iterations})
 
                     return result
 
@@ -909,19 +820,19 @@ class Agent:
             raise AgentMaxIterationsError(self.name, self.config.max_iterations)
 
         except AgentCancelledError:
-            self._set_state(AgentState.CANCELLED)
+            await self._aset_state(AgentState.CANCELLED)
             error_msg = "Agent execution cancelled"
             raise
 
         except AgentMaxIterationsError:
-            self._set_state(AgentState.FAILED)
+            await self._aset_state(AgentState.FAILED)
             error_msg = f"Max iterations ({self.config.max_iterations}) exceeded"
             raise
 
         except Exception as e:
-            self._set_state(AgentState.FAILED)
+            await self._aset_state(AgentState.FAILED)
             error_msg = str(e)
-            self._emit(EventType.AGENT_ERROR, {"error": error_msg, "error_type": type(e).__name__})
+            await self._aemit(EventType.AGENT_ERROR, {"error": error_msg, "error_type": type(e).__name__})
             raise AgentError(f"Agent execution failed: {error_msg}", agent_name=self.name) from e
 
         finally:
@@ -931,7 +842,7 @@ class Agent:
     def stream(
         self,
         prompt: str,
-        tools: Optional[List[Tool]] = None,
+        tools: list[Tool] | None = None,
         **kwargs: Any,
     ) -> Iterator[str]:
         """
@@ -942,14 +853,13 @@ class Agent:
         """
         async def _collect():
             return [chunk async for chunk in self.astream(prompt, tools=tools, **kwargs)]
-            
-        for chunk in asyncio.run(_collect()):
-            yield chunk
+
+        yield from asyncio.run(_collect())
 
     async def astream(
         self,
         prompt: str,
-        tools: Optional[List[Tool]] = None,
+        tools: list[Tool] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         """
@@ -958,13 +868,12 @@ class Agent:
         Yields:
             Text chunks from the response
         """
-        self._set_state(AgentState.RUNNING)
+        await self._aset_state(AgentState.RUNNING)
 
         try:
-            if self._memory and getattr(self._memory, "auto_summary", False) and getattr(self._memory, "max_messages", None):
-                if len(self._memory) > self._memory.max_messages:
-                    await self._memory.asummarize(self.provider.acomplete)
-                    
+            if self._memory and getattr(self._memory, "auto_summary", False) and getattr(self._memory, "max_messages", None) and len(self._memory) > self._memory.max_messages:
+                await self._memory.asummarize(self.provider.acomplete)
+
             messages = self._build_messages(prompt)
             tool_defs = self._tools.get_definitions()
             if tools:
@@ -995,7 +904,7 @@ class Agent:
                     yield chunk
 
         finally:
-            self._set_state(AgentState.COMPLETED)
+            await self._aset_state(AgentState.COMPLETED)
 
     def cancel(self) -> None:
         """Cancel the current execution."""
@@ -1006,7 +915,7 @@ class Agent:
         if self._memory:
             self._memory.clear()
 
-    def get_memory(self) -> Optional[Memory]:
+    def get_memory(self) -> Memory | None:
         """Get the agent's memory object."""
         return self._memory
 
@@ -1014,7 +923,7 @@ class Agent:
         """String representation."""
         return f"Agent(name={self.name!r}, model={self.config.model!r}, tools={len(self._tools)}, state={self.state.value})"
 
-    def __enter__(self) -> "Agent":
+    def __enter__(self) -> Agent:
         """Context manager entry."""
         return self
 

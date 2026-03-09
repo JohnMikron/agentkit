@@ -10,16 +10,21 @@ Provides intelligent routing based on:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentkit.core.agent import Agent
 from agentkit.core.types import AgentResult
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from agentkit.core.agent import Agent
 
 
 class RouteStrategy(str, Enum):
@@ -48,21 +53,19 @@ class Route:
 
     name: str
     agent: Agent
-    keywords: List[str] = field(default_factory=list)
-    patterns: List[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
+    patterns: list[str] = field(default_factory=list)
     priority: int = 0
-    condition: Optional[Callable[[str], bool]] = None
+    condition: Callable[[str], bool] | None = None
 
     # Compiled patterns
-    _compiled_patterns: List[re.Pattern] = field(default_factory=list, repr=False)
+    _compiled_patterns: list[re.Pattern] = field(default_factory=list, repr=False)
 
     def __post_init__(self) -> None:
         """Compile regex patterns."""
         for pattern in self.patterns:
-            try:
+            with contextlib.suppress(re.error):
                 self._compiled_patterns.append(re.compile(pattern, re.IGNORECASE))
-            except re.error:
-                pass
 
     def matches(self, input: str) -> bool:
         """Check if input matches this route."""
@@ -93,11 +96,11 @@ class RouterResult(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     success: bool = True
-    routed_to: List[str] = Field(default_factory=list)
-    results: Dict[str, AgentResult] = Field(default_factory=dict)
+    routed_to: list[str] = Field(default_factory=list)
+    results: dict[str, AgentResult] = Field(default_factory=dict)
     final_output: str = ""
     latency_ms: float = 0.0
-    errors: List[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
 
 
 class Router:
@@ -122,7 +125,7 @@ class Router:
         self,
         name: str = "router",
         strategy: RouteStrategy = RouteStrategy.KEYWORD,
-        default_agent: Optional[Agent] = None,
+        default_agent: Agent | None = None,
         aggregate_results: bool = False,
     ) -> None:
         self.name = name
@@ -130,18 +133,18 @@ class Router:
         self.default_agent = default_agent
         self.aggregate_results = aggregate_results
 
-        self._routes: Dict[str, Route] = {}
-        self._classifier: Optional[Agent] = None
+        self._routes: dict[str, Route] = {}
+        self._classifier: Agent | None = None
 
     def add_route(
         self,
         name: str,
         agent: Agent,
-        keywords: Optional[List[str]] = None,
-        patterns: Optional[List[str]] = None,
+        keywords: list[str] | None = None,
+        patterns: list[str] | None = None,
         priority: int = 0,
-        condition: Optional[Callable[[str], bool]] = None,
-    ) -> "Router":
+        condition: Callable[[str], bool] | None = None,
+    ) -> Router:
         """
         Add a route to the router.
 
@@ -157,7 +160,7 @@ class Router:
         )
         return self
 
-    def set_classifier(self, agent: Agent) -> "Router":
+    def set_classifier(self, agent: Agent) -> Router:
         """
         Set an LLM agent for classification.
 
@@ -166,7 +169,7 @@ class Router:
         self._classifier = agent
         return self
 
-    def _route_keyword(self, input: str) -> List[Route]:
+    def _route_keyword(self, input: str) -> list[Route]:
         """Route based on keyword matching."""
         matches = []
 
@@ -179,7 +182,7 @@ class Router:
 
         return matches
 
-    async def _route_llm(self, input: str) -> List[Route]:
+    async def _route_llm(self, input: str) -> list[Route]:
         """Route using LLM classification."""
         if not self._classifier:
             return self._route_keyword(input)
@@ -205,7 +208,7 @@ Respond with ONLY the category name, nothing else."""
 
         return []
 
-    def _determine_routes(self, input: str) -> List[Route]:
+    def _determine_routes(self, input: str) -> list[Route]:
         """Determine which routes to use based on strategy."""
         if self.strategy == RouteStrategy.ALL:
             return list(self._routes.values())
@@ -234,9 +237,9 @@ Respond with ONLY the category name, nothing else."""
         """
         start_time = time.perf_counter()
 
-        results: Dict[str, AgentResult] = {}
-        routed_to: List[str] = []
-        errors: List[str] = []
+        results: dict[str, AgentResult] = {}
+        routed_to: list[str] = []
+        errors: list[str] = []
 
         # Determine routes
         if self.strategy == RouteStrategy.LLM:

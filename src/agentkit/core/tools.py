@@ -12,18 +12,23 @@ This module provides a comprehensive tool system with:
 from __future__ import annotations
 
 import asyncio
-import functools
 import inspect
 import json
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, get_type_hints, Literal
+from collections.abc import Callable
+from typing import (
+    Any,
+    Literal,
+    TypeVar,
+    Union,
+    get_type_hints,
+)
 
 import jsonschema
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field
 
-from agentkit.core.exceptions import ToolError, ToolExecutionError, ToolValidationError
-from agentkit.core.types import ToolCall, ToolDefinition, ToolResult
+from agentkit.core.exceptions import ToolError, ToolValidationError
+from agentkit.core.types import ToolDefinition, ToolResult
 
 # Type variables
 F = TypeVar("F", bound=Callable[..., Any])
@@ -31,7 +36,7 @@ T = TypeVar("T")
 
 
 # JSON Schema type mapping
-_PYTHON_TO_JSON_TYPE: Dict[type, str] = {
+_PYTHON_TO_JSON_TYPE: dict[type, str] = {
     str: "string",
     int: "integer",
     float: "number",
@@ -62,7 +67,7 @@ def _get_json_type(python_type: type) -> str:
     return _PYTHON_TO_JSON_TYPE.get(python_type, "string")
 
 
-def _generate_schema_from_function(func: Callable[..., Any]) -> Dict[str, Any]:
+def _generate_schema_from_function(func: Callable[..., Any]) -> dict[str, Any]:
     """
     Generate JSON Schema from a function signature.
 
@@ -71,8 +76,8 @@ def _generate_schema_from_function(func: Callable[..., Any]) -> Dict[str, Any]:
     sig = inspect.signature(func)
     hints = get_type_hints(func)
 
-    properties: Dict[str, Any] = {}
-    required: List[str] = []
+    properties: dict[str, Any] = {}
+    required: list[str] = []
 
     # Extract parameter descriptions from docstring
     param_docs = _parse_param_docs(func.__doc__ or "")
@@ -84,7 +89,7 @@ def _generate_schema_from_function(func: Callable[..., Any]) -> Dict[str, Any]:
         param_type = hints.get(param_name, str)
         json_type = _get_json_type(param_type)
 
-        prop: Dict[str, Any] = {"type": json_type}
+        prop: dict[str, Any] = {"type": json_type}
 
         # Add description from docstring
         if param_name in param_docs:
@@ -106,7 +111,7 @@ def _generate_schema_from_function(func: Callable[..., Any]) -> Dict[str, Any]:
         if param.default is inspect.Parameter.empty:
             required.append(param_name)
 
-    schema: Dict[str, Any] = {
+    schema: dict[str, Any] = {
         "type": "object",
         "properties": properties,
     }
@@ -117,17 +122,17 @@ def _generate_schema_from_function(func: Callable[..., Any]) -> Dict[str, Any]:
     return schema
 
 
-def _parse_param_docs(docstring: str) -> Dict[str, str]:
+def _parse_param_docs(docstring: str) -> dict[str, str]:
     """
     Parse parameter descriptions from docstring.
 
     Supports Google, NumPy, and Sphinx style docstrings.
     """
-    params: Dict[str, str] = {}
+    params: dict[str, str] = {}
 
     lines = docstring.strip().split("\n")
     in_args_section = False
-    current_param: Optional[str] = None
+    current_param: str | None = None
 
     for line in lines:
         stripped = line.strip()
@@ -185,10 +190,10 @@ class Tool(BaseModel):
     name: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-zA-Z_][a-zA-Z0-9_-]*$")
     description: str = Field(..., min_length=1)
     func: Callable[..., Any]
-    parameters: Dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
     strict: bool = False
-    timeout: Optional[float] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    timeout: float | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def __init__(self, **data: Any) -> None:
         # Auto-generate schema if not provided
@@ -215,7 +220,7 @@ class Tool(BaseModel):
             strict=self.strict,
         )
 
-    def validate_arguments(self, arguments: Dict[str, Any]) -> None:
+    def validate_arguments(self, arguments: dict[str, Any]) -> None:
         """
         Validate arguments against the tool's JSON Schema.
 
@@ -231,9 +236,9 @@ class Tool(BaseModel):
             raise ToolValidationError(
                 tool_name=self.name,
                 validation_errors=[{"path": list(e.path), "message": e.message}],
-            )
+            ) from e
 
-    def execute(self, arguments: Dict[str, Any], validate: bool = True) -> ToolResult:
+    def execute(self, arguments: dict[str, Any], validate: bool = True) -> ToolResult:
         """
         Execute the tool with the given arguments.
 
@@ -256,7 +261,7 @@ class Tool(BaseModel):
             if asyncio.iscoroutine(result):
                 # Create event loop if needed
                 try:
-                    loop = asyncio.get_running_loop()
+                    asyncio.get_running_loop()
                     # We're in an async context, can't use run_until_complete
                     import concurrent.futures
 
@@ -273,6 +278,7 @@ class Tool(BaseModel):
                 tool_call_id="",
                 name=self.name,
                 content=self._serialize_result(result),
+                raw_result=result,
                 execution_time_ms=execution_time,
             )
 
@@ -283,12 +289,12 @@ class Tool(BaseModel):
             return ToolResult(
                 tool_call_id="",
                 name=self.name,
-                content=f"Error: {type(e).__name__}: {str(e)}",
+                content=f"Error: {type(e).__name__}: {e!s}",
                 is_error=True,
                 execution_time_ms=execution_time,
             )
 
-    async def aexecute(self, arguments: Dict[str, Any], validate: bool = True) -> ToolResult:
+    async def aexecute(self, arguments: dict[str, Any], validate: bool = True) -> ToolResult:
         """
         Execute the tool asynchronously.
 
@@ -316,6 +322,7 @@ class Tool(BaseModel):
                 tool_call_id="",
                 name=self.name,
                 content=self._serialize_result(result),
+                raw_result=result,
                 execution_time_ms=execution_time,
             )
 
@@ -326,7 +333,7 @@ class Tool(BaseModel):
             return ToolResult(
                 tool_call_id="",
                 name=self.name,
-                content=f"Error: {type(e).__name__}: {str(e)}",
+                content=f"Error: {type(e).__name__}: {e!s}",
                 is_error=True,
                 execution_time_ms=execution_time,
             )
@@ -344,13 +351,13 @@ class Tool(BaseModel):
 
 
 def tool(
-    func: Optional[Callable[..., Any]] = None,
+    func: Callable[..., Any] | None = None,
     *,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
+    name: str | None = None,
+    description: str | None = None,
     strict: bool = False,
-    timeout: Optional[float] = None,
-) -> Union[Tool, Callable[[F], Tool]]:
+    timeout: float | None = None,
+) -> Tool | Callable[[F], Tool]:
     """
     Decorator to create a Tool from a function.
 
@@ -388,7 +395,7 @@ def tool(
 def google_search(query: str) -> str:
     """
     Search Google for information.
-    
+
     Args:
         query: The search query
     """
@@ -399,19 +406,19 @@ def google_search(query: str) -> str:
 def duckduckgo_search(query: str) -> str:
     """
     Search the web using DuckDuckGo.
-    
+
     Args:
         query: The search query
     """
     try:
         import requests
         from bs4 import BeautifulSoup
-        
+
         url = f"https://duckduckgo.com/html/?q={query}"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-        
+
         soup = BeautifulSoup(response.text, "html.parser")
         results = []
         for result in soup.find_all("div", class_="result")[:5]:
@@ -419,13 +426,13 @@ def duckduckgo_search(query: str) -> str:
             snippet = result.find("a", class_="result__snippet")
             if title and snippet:
                 results.append(f"{title.text.strip()}\n{title['href']}\n{snippet.text.strip()}")
-        
+
         if not results:
             return f"DuckDuckGo search for '{query}' returned no results. Falling back to internal knowledge."
-            
+
         return "\n\n".join(results)
     except Exception as e:
-        return f"DuckDuckGo search error: {str(e)}. Please check your internet connection and ensure 'requests' and 'beautifulsoup4' are installed."
+        return f"DuckDuckGo search error: {e!s}. Please check your internet connection and ensure 'requests' and 'beautifulsoup4' are installed."
 
 
 class ToolRegistry:
@@ -438,9 +445,9 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         """Initialize an empty tool registry."""
-        self._tools: Dict[str, Tool] = {}
+        self._tools: dict[str, Tool] = {}
 
-    def add(self, tool: Tool) -> "ToolRegistry":
+    def add(self, tool: Tool) -> ToolRegistry:
         """
         Add a tool to the registry.
 
@@ -451,11 +458,11 @@ class ToolRegistry:
         self._tools[tool.name] = tool
         return self
 
-    def remove(self, name: str) -> Optional[Tool]:
+    def remove(self, name: str) -> Tool | None:
         """Remove a tool from the registry."""
         return self._tools.pop(name, None)
 
-    def get(self, name: str) -> Optional[Tool]:
+    def get(self, name: str) -> Tool | None:
         """Get a tool by name."""
         return self._tools.get(name)
 
@@ -463,15 +470,15 @@ class ToolRegistry:
         """Check if a tool exists."""
         return name in self._tools
 
-    def list_tools(self) -> List[Tool]:
+    def list_tools(self) -> list[Tool]:
         """Get all registered tools."""
         return list(self._tools.values())
 
-    def get_definitions(self) -> List[ToolDefinition]:
+    def get_definitions(self) -> list[ToolDefinition]:
         """Get tool definitions for all tools."""
         return [t.to_definition() for t in self._tools.values()]
 
-    def execute(self, name: str, arguments: Union[str, Dict[str, Any]], validate: bool = True) -> ToolResult:
+    def execute(self, name: str, arguments: str | dict[str, Any], validate: bool = True) -> ToolResult:
         """
         Execute a tool by name.
 
@@ -495,12 +502,12 @@ class ToolRegistry:
                 raise ToolValidationError(
                     tool_name=name,
                     validation_errors=[{"message": f"Invalid JSON: {e}"}],
-                )
+                ) from e
 
         return tool.execute(arguments, validate=validate)
 
     async def aexecute(
-        self, name: str, arguments: Union[str, Dict[str, Any]], validate: bool = True
+        self, name: str, arguments: str | dict[str, Any], validate: bool = True
     ) -> ToolResult:
         """
         Execute a tool asynchronously.
@@ -524,7 +531,7 @@ class ToolRegistry:
                 raise ToolValidationError(
                     tool_name=name,
                     validation_errors=[{"message": f"Invalid JSON: {e}"}],
-                )
+                ) from e
 
         return await tool.aexecute(arguments, validate=validate)
 
@@ -619,17 +626,17 @@ def calculator(expression: str) -> float:
 
     # Preliminary cleanup
     expression = expression.replace("^", "**")
-    
+
     try:
         tree = ast.parse(expression, mode="eval")
         result = _eval(tree.body)
         return float(result)
     except Exception as e:
-        raise ValueError(f"Failed to evaluate expression: {e}")
+        raise ValueError(f"Failed to evaluate expression: {e}") from e
 
 
 @tool
-def current_datetime(timezone: Optional[str] = None) -> str:
+def current_datetime(timezone: str | None = None) -> str:
     """
     Get the current date and time.
 
@@ -661,7 +668,7 @@ def json_parse(json_string: str) -> Any:
     try:
         return json.loads(json_string)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON: {e}")
+        raise ValueError(f"Invalid JSON: {e}") from e
 
 
 @tool
@@ -676,11 +683,11 @@ def json_stringify(obj: Any, indent: int = 2) -> str:
     try:
         return json.dumps(obj, indent=indent, ensure_ascii=False, default=str)
     except (TypeError, ValueError) as e:
-        raise ValueError(f"Cannot serialize to JSON: {e}")
+        raise ValueError(f"Cannot serialize to JSON: {e}") from e
 
 
 # Collection of all built-in tools
-BUILTIN_TOOLS: List[Tool] = [
+BUILTIN_TOOLS: list[Tool] = [
     calculator,
     current_datetime,
     json_parse,
@@ -688,7 +695,7 @@ BUILTIN_TOOLS: List[Tool] = [
 ]
 
 
-def get_builtin_tools(include: Optional[List[str]] = None, exclude: Optional[List[str]] = None) -> List[Tool]:
+def get_builtin_tools(include: list[str] | None = None, exclude: list[str] | None = None) -> list[Tool]:
     """
     Get built-in tools, optionally filtered.
 

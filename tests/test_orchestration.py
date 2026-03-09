@@ -43,7 +43,7 @@ async def test_workflow_basic():
     assert result.final_output == "Step 2 output"
     assert "step1" in result.state.completed_steps
     assert "step2" in result.state.completed_steps
-    assert result.state.context["step1_result"] == "Step 1 output"
+    assert getattr(result.state.context, "step1_result") == "Step 1 output"
 
 @pytest.mark.asyncio
 async def test_workflow_conditional():

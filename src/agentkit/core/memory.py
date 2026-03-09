@@ -12,17 +12,17 @@ from __future__ import annotations
 
 import asyncio
 import json
-import uuid
 import time
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-from typing import Any, Dict, Generic, List, Optional, TypeVar, Union, Callable
+from agentkit.core.types import Message, Role
 
-from agentkit.core.types import Message, Role, ModelId
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 T = TypeVar("T")
 
@@ -45,10 +45,10 @@ class MemoryEntry:
     role: str = "user"
     content: str = ""
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    embedding: Optional[List[float]] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    embedding: list[float] | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "id": self.id,
@@ -59,7 +59,7 @@ class MemoryEntry:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "MemoryEntry":
+    def from_dict(cls, data: dict[str, Any]) -> MemoryEntry:
         """Create from dictionary."""
         return cls(
             id=data.get("id", ""),
@@ -70,7 +70,7 @@ class MemoryEntry:
         )
 
     @classmethod
-    def from_message(cls, message: Message) -> "MemoryEntry":
+    def from_message(cls, message: Message) -> MemoryEntry:
         """Create from a Message object."""
         meta = message.metadata.copy()
         if message.name:
@@ -79,7 +79,7 @@ class MemoryEntry:
             meta["tool_call_id"] = message.tool_call_id
         if message.tool_calls:
             meta["tool_calls"] = [tc.model_dump() for tc in message.tool_calls]
-            
+
         return cls(
             role=message.role.value,
             content=message.content,
@@ -93,11 +93,11 @@ class MemoryEntry:
         name = meta.pop("name", None)
         tool_call_id = meta.pop("tool_call_id", None)
         tool_calls_data = meta.pop("tool_calls", None)
-        
+
         tool_calls = None
         if tool_calls_data:
             tool_calls = [ToolCall(**tc) for tc in tool_calls_data]
-            
+
         return Message(
             role=Role(self.role),
             content=self.content,
@@ -121,12 +121,12 @@ class MemoryStorage(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    def load(self, limit: Optional[int] = None) -> List[MemoryEntry]:
+    def load(self, limit: int | None = None) -> list[MemoryEntry]:
         """Load memory entries, optionally limited to the most recent."""
         pass
 
     @abstractmethod
-    def get(self, entry_id: str) -> Optional[MemoryEntry]:
+    def get(self, entry_id: str) -> MemoryEntry | None:
         """Get a specific entry by ID."""
         pass
 
@@ -146,7 +146,7 @@ class MemoryStorage(ABC, Generic[T]):
         pass
 
     @abstractmethod
-    def search(self, query: str, limit: int = 10) -> List[MemoryEntry]:
+    def search(self, query: str, limit: int = 10) -> list[MemoryEntry]:
         """Search for entries containing the query."""
         pass
 
@@ -164,7 +164,7 @@ class InMemoryStorage(MemoryStorage[MemoryEntry]):
         entries = storage.load()
     """
 
-    def __init__(self, max_entries: Optional[int] = None) -> None:
+    def __init__(self, max_entries: int | None = None) -> None:
         """
         Initialize in-memory storage.
 
@@ -172,8 +172,8 @@ class InMemoryStorage(MemoryStorage[MemoryEntry]):
             max_entries: Maximum number of entries to keep (default: unlimited)
         """
         self.max_entries = max_entries
-        self._entries: List[MemoryEntry] = []
-        self._by_id: Dict[str, MemoryEntry] = {}
+        self._entries: list[MemoryEntry] = []
+        self._by_id: dict[str, MemoryEntry] = {}
 
     def save(self, entry: MemoryEntry) -> str:
         """Save a memory entry."""
@@ -187,13 +187,13 @@ class InMemoryStorage(MemoryStorage[MemoryEntry]):
 
         return entry.id
 
-    def load(self, limit: Optional[int] = None) -> List[MemoryEntry]:
+    def load(self, limit: int | None = None) -> list[MemoryEntry]:
         """Load memory entries."""
         if limit:
             return self._entries[-limit:]
         return self._entries.copy()
 
-    def get(self, entry_id: str) -> Optional[MemoryEntry]:
+    def get(self, entry_id: str) -> MemoryEntry | None:
         """Get a specific entry by ID."""
         return self._by_id.get(entry_id)
 
@@ -214,7 +214,7 @@ class InMemoryStorage(MemoryStorage[MemoryEntry]):
         """Get the number of stored entries."""
         return len(self._entries)
 
-    def search(self, query: str, limit: int = 10) -> List[MemoryEntry]:
+    def search(self, query: str, limit: int = 10) -> list[MemoryEntry]:
         """Search for entries containing the query (case-insensitive)."""
         query_lower = query.lower()
         results = [e for e in self._entries if query_lower in e.content.lower()]
@@ -236,7 +236,7 @@ class FileStorage(MemoryStorage[MemoryEntry]):
     def __init__(
         self,
         filepath: str,
-        max_entries: Optional[int] = None,
+        max_entries: int | None = None,
         autosave: bool = True,
     ) -> None:
         """
@@ -250,8 +250,8 @@ class FileStorage(MemoryStorage[MemoryEntry]):
         self.filepath = Path(filepath)
         self.max_entries = max_entries
         self.autosave = autosave
-        self._entries: List[MemoryEntry] = []
-        self._by_id: Dict[str, MemoryEntry] = {}
+        self._entries: list[MemoryEntry] = []
+        self._by_id: dict[str, MemoryEntry] = {}
         self._lock = asyncio.Lock()
 
         # Load existing entries
@@ -261,7 +261,7 @@ class FileStorage(MemoryStorage[MemoryEntry]):
         """Load entries from the file."""
         if self.filepath.exists():
             try:
-                with open(self.filepath, "r", encoding="utf-8") as f:
+                with self.filepath.open(encoding="utf-8") as f:
                     data = json.load(f)
                     self._entries = [MemoryEntry.from_dict(e) for e in data]
                     self._by_id = {e.id: e for e in self._entries}
@@ -272,7 +272,7 @@ class FileStorage(MemoryStorage[MemoryEntry]):
     def _save_to_file(self) -> None:
         """Save entries to the file."""
         self.filepath.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.filepath, "w", encoding="utf-8") as f:
+        with self.filepath.open("w", encoding="utf-8") as f:
             json.dump([e.to_dict() for e in self._entries], f, indent=2)
 
     def save(self, entry: MemoryEntry) -> str:
@@ -289,13 +289,13 @@ class FileStorage(MemoryStorage[MemoryEntry]):
 
         return entry.id
 
-    def load(self, limit: Optional[int] = None) -> List[MemoryEntry]:
+    def load(self, limit: int | None = None) -> list[MemoryEntry]:
         """Load memory entries."""
         if limit:
             return self._entries[-limit:]
         return self._entries.copy()
 
-    def get(self, entry_id: str) -> Optional[MemoryEntry]:
+    def get(self, entry_id: str) -> MemoryEntry | None:
         """Get a specific entry by ID."""
         return self._by_id.get(entry_id)
 
@@ -320,7 +320,7 @@ class FileStorage(MemoryStorage[MemoryEntry]):
         """Get the number of stored entries."""
         return len(self._entries)
 
-    def search(self, query: str, limit: int = 10) -> List[MemoryEntry]:
+    def search(self, query: str, limit: int = 10) -> list[MemoryEntry]:
         """Search for entries containing the query."""
         query_lower = query.lower()
         results = [e for e in self._entries if query_lower in e.content.lower()]
@@ -341,7 +341,7 @@ class RedisStorage(MemoryStorage[MemoryEntry]):
         self,
         redis_url: str = "redis://localhost:6379",
         key_prefix: str = "agentkit:memory:",
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> None:
         """
         Initialize Redis storage.
@@ -353,8 +353,8 @@ class RedisStorage(MemoryStorage[MemoryEntry]):
         """
         try:
             import redis
-        except ImportError:
-            raise ImportError("Redis storage requires 'redis' package: pip install redis")
+        except ImportError as err:
+            raise ImportError("Redis storage requires 'redis' package: pip install redis") from err
 
         self._redis = redis.from_url(redis_url)
         self.key_prefix = key_prefix
@@ -380,7 +380,7 @@ class RedisStorage(MemoryStorage[MemoryEntry]):
         pipe.execute()
         return entry.id
 
-    def load(self, limit: Optional[int] = None) -> List[MemoryEntry]:
+    def load(self, limit: int | None = None) -> list[MemoryEntry]:
         """Load memory entries."""
         # Get all entry IDs
         if limit:
@@ -405,7 +405,7 @@ class RedisStorage(MemoryStorage[MemoryEntry]):
 
         return entries
 
-    def get(self, entry_id: str) -> Optional[MemoryEntry]:
+    def get(self, entry_id: str) -> MemoryEntry | None:
         """Get a specific entry by ID."""
         key = self._get_key(entry_id)
         data = self._redis.get(key)
@@ -436,7 +436,7 @@ class RedisStorage(MemoryStorage[MemoryEntry]):
         """Get the number of stored entries."""
         return self._redis.llen(self._list_key)
 
-    def search(self, query: str, limit: int = 10) -> List[MemoryEntry]:
+    def search(self, query: str, limit: int = 10) -> list[MemoryEntry]:
         """Search for entries (basic implementation)."""
         # For better search, consider using Redisearch or vector search
         entries = self.load()
@@ -458,7 +458,7 @@ class VectorStorage(MemoryStorage[MemoryEntry]):
     def __init__(
         self,
         collection_name: str = "agentkit_memory",
-        persist_directory: Optional[str] = None,
+        persist_directory: str | None = None,
         embedding_model: str = "all-MiniLM-L6-v2",
     ) -> None:
         """
@@ -472,11 +472,11 @@ class VectorStorage(MemoryStorage[MemoryEntry]):
         try:
             import chromadb
             from sentence_transformers import SentenceTransformer
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "Vector storage requires 'chromadb' and 'sentence-transformers' packages: "
                 "pip install chromadb sentence-transformers"
-            )
+            ) from err
 
         self._client = chromadb.PersistentClient(path=persist_directory) if persist_directory else chromadb.EphemeralClient()
         self._model = SentenceTransformer(embedding_model)
@@ -485,7 +485,7 @@ class VectorStorage(MemoryStorage[MemoryEntry]):
     def save(self, entry: MemoryEntry) -> str:
         """Save a memory entry with its embedding."""
         embedding = self._model.encode(entry.content).tolist()
-        
+
         self._collection.add(
             ids=[entry.id],
             embeddings=[embedding],
@@ -494,11 +494,11 @@ class VectorStorage(MemoryStorage[MemoryEntry]):
         )
         return entry.id
 
-    def load(self, limit: Optional[int] = None) -> List[MemoryEntry]:
+    def load(self, limit: int | None = None) -> list[MemoryEntry]:
         """Load memory entries (ordered by timestamp)."""
         results = self._collection.get()
         entries = []
-        
+
         for i in range(len(results["ids"])):
             metadata = results["metadatas"][i]
             entries.append(MemoryEntry(
@@ -508,19 +508,19 @@ class VectorStorage(MemoryStorage[MemoryEntry]):
                 timestamp=datetime.fromisoformat(metadata["timestamp"]),
                 metadata={k: v for k, v in metadata.items() if k not in ("role", "timestamp")},
             ))
-            
+
         # Sort by timestamp
         entries.sort(key=lambda x: x.timestamp)
         if limit:
             return entries[-limit:]
         return entries
 
-    def get(self, entry_id: str) -> Optional[MemoryEntry]:
+    def get(self, entry_id: str) -> MemoryEntry | None:
         """Get a specific entry by ID."""
         result = self._collection.get(ids=[entry_id])
         if not result["ids"]:
             return None
-            
+
         metadata = result["metadatas"][0]
         return MemoryEntry(
             id=result["ids"][0],
@@ -544,14 +544,14 @@ class VectorStorage(MemoryStorage[MemoryEntry]):
         """Get the number of stored entries."""
         return self._collection.count()
 
-    def search(self, query: str, limit: int = 10) -> List[MemoryEntry]:
+    def search(self, query: str, limit: int = 10) -> list[MemoryEntry]:
         """Search for entries by semantic similarity."""
         query_embedding = self._model.encode(query).tolist()
         results = self._collection.query(
             query_embeddings=[query_embedding],
             n_results=limit,
         )
-        
+
         entries = []
         for i in range(len(results["ids"][0])):
             metadata = results["metadatas"][0][i]
@@ -571,7 +571,7 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
 
     Provides reliable, concurrent, zero-dependency persistent memory.
     Best for production agents that need persistent memory without external services.
-    
+
     Example:
         storage = SQLiteStorage("agent_memory.db")
         memory = Memory(storage=storage)
@@ -581,11 +581,10 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
     def __init__(self, db_path: str = "agent_memory.db") -> None:
         """
         Initialize SQLite storage.
-        
+
         Args:
             db_path: Path to the SQLite database file
         """
-        import sqlite3
         self.db_path = db_path
         self._init_db()
 
@@ -621,12 +620,12 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
             conn.commit()
         return entry.id
 
-    def load(self, limit: Optional[int] = None) -> List[MemoryEntry]:
+    def load(self, limit: int | None = None) -> list[MemoryEntry]:
         query = "SELECT id, role, content, timestamp, metadata FROM memory_entries ORDER BY timestamp ASC"
         if limit is not None:
             # Get the last N rows, but keep them in ascending order
             query = f"SELECT * FROM (SELECT id, role, content, timestamp, metadata FROM memory_entries ORDER BY timestamp DESC LIMIT {limit}) ORDER BY timestamp ASC"
-            
+
         entries = []
         with self._get_connection() as conn:
             cursor = conn.execute(query)
@@ -640,7 +639,7 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
                 ))
         return entries
 
-    def get(self, entry_id: str) -> Optional[MemoryEntry]:
+    def get(self, entry_id: str) -> MemoryEntry | None:
         with self._get_connection() as conn:
             cursor = conn.execute("SELECT id, role, content, timestamp, metadata FROM memory_entries WHERE id = ?", (entry_id,))
             row = cursor.fetchone()
@@ -670,7 +669,7 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
             cursor = conn.execute("SELECT COUNT(*) FROM memory_entries")
             return cursor.fetchone()[0]
 
-    def search(self, query: str, limit: int = 10) -> List[MemoryEntry]:
+    def search(self, query: str, limit: int = 10) -> list[MemoryEntry]:
         query_lower = f"%{query.lower()}%"
         sql = "SELECT id, role, content, timestamp, metadata FROM memory_entries WHERE LOWER(content) LIKE ? ORDER BY timestamp DESC LIMIT ?"
         entries = []
@@ -703,10 +702,10 @@ class Memory:
 
     def __init__(
         self,
-        storage: Optional[MemoryStorage] = None,
-        system_prompt: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        max_messages: Optional[int] = None,
+        storage: MemoryStorage | None = None,
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
+        max_messages: int | None = None,
         auto_summary: bool = False,
     ) -> None:
         """
@@ -725,35 +724,35 @@ class Memory:
         self.max_messages = max_messages
         self.auto_summary = auto_summary
 
-    async def asummarize(self, provider_complete: Callable[[List[Message]], Message], keep_recent: int = 2) -> bool:
+    async def asummarize(self, provider_complete: Callable[[list[Message]], Message], keep_recent: int = 2) -> bool:
         """
         Summarize older messages asynchronously using a provider to save context.
-        
+
         Args:
             provider_complete: An async callable that takes messages and returns a summary message.
             keep_recent: Number of recent messages to retain in full text.
-            
+
         Returns:
             True if summarization occurred, False otherwise.
         """
         history = self.get_history()
         if len(history) <= keep_recent + 1:
             return False
-            
+
         to_summarize = history[:-keep_recent]
         recent = history[-keep_recent:]
-        
+
         prompt = "Summarize the following conversation concisely, focusing on key facts, decisions, and context:\n\n"
         for m in to_summarize:
             prompt += f"{m.role}: {m.content}\n"
-            
+
         summary_msg = await provider_complete([Message.user(prompt)])
-        
+
         self.clear()
         self.add_system_message(f"Summary of prior conversation: {summary_msg.content}")
         for m in recent:
             self.add_message(m)
-            
+
         return True
 
     def add_message(self, message: Message) -> str:
@@ -761,19 +760,19 @@ class Memory:
         entry = MemoryEntry.from_message(message)
         return self.storage.save(entry)
 
-    def add_user_message(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> str:
+    def add_user_message(self, content: str, metadata: dict[str, Any] | None = None) -> str:
         """Add a user message to memory."""
         return self.add_message(Message.user(content, metadata=metadata or {}))
 
-    def add_assistant_message(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> str:
+    def add_assistant_message(self, content: str, metadata: dict[str, Any] | None = None) -> str:
         """Add an assistant message to memory."""
         return self.add_message(Message.assistant(content, metadata=metadata or {}))
 
-    def add_system_message(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> str:
+    def add_system_message(self, content: str, metadata: dict[str, Any] | None = None) -> str:
         """Add a system message to memory."""
         return self.add_message(Message.system(content, metadata=metadata or {}))
 
-    def get_history(self, limit: Optional[int] = None) -> List[Message]:
+    def get_history(self, limit: int | None = None) -> list[Message]:
         """
         Get conversation history as Messages.
 
@@ -786,11 +785,11 @@ class Memory:
         entries = self.storage.load(limit)
         return [e.to_message() for e in entries]
 
-    def get_last_n(self, n: int) -> List[Message]:
+    def get_last_n(self, n: int) -> list[Message]:
         """Get the last N messages."""
         return self.get_history(limit=n)
 
-    def search(self, query: str, limit: int = 10) -> List[Message]:
+    def search(self, query: str, limit: int = 10) -> list[Message]:
         """
         Search memory for entries containing the query.
 
@@ -812,7 +811,7 @@ class Memory:
         """Get the number of stored entries."""
         return self.storage.count()
 
-    def to_messages(self) -> List[Message]:
+    def to_messages(self) -> list[Message]:
         """
         Convert memory to message list for LLM provider.
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator, Dict, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from agentkit.core.types import (
     FinishReason,
@@ -17,6 +17,9 @@ from agentkit.core.types import (
     ToolDefinition,
     Usage,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator
 
 
 class LLMProvider(ABC):
@@ -34,10 +37,10 @@ class LLMProvider(ABC):
     def __init__(
         self,
         model: str,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -61,8 +64,8 @@ class LLMProvider(ABC):
     @abstractmethod
     def complete(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """
@@ -81,8 +84,8 @@ class LLMProvider(ABC):
     @abstractmethod
     async def acomplete(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """
@@ -101,8 +104,8 @@ class LLMProvider(ABC):
     @abstractmethod
     def stream(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> Iterator[str]:
         """
@@ -121,8 +124,8 @@ class LLMProvider(ABC):
     @abstractmethod
     async def astream(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         """
@@ -156,7 +159,7 @@ class LLMProvider(ABC):
             cached_tokens=cached_tokens,
         )
 
-    def _parse_finish_reason(self, reason: Optional[str]) -> Optional[FinishReason]:
+    def _parse_finish_reason(self, reason: str | None) -> FinishReason | None:
         """Parse finish reason string to enum."""
         if not reason:
             return None

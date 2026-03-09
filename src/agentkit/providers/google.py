@@ -9,11 +9,16 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Any, AsyncIterator, Dict, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from agentkit.core.exceptions import MissingAPIKeyError, ProviderAuthenticationError, ProviderError, ProviderRateLimitError
+from agentkit.core.exceptions import (
+    MissingAPIKeyError,
+    ProviderAuthenticationError,
+    ProviderError,
+    ProviderRateLimitError,
+)
 from agentkit.core.types import (
     FinishReason,
     LLMResponse,
@@ -23,6 +28,9 @@ from agentkit.core.types import (
     ToolDefinition,
 )
 from agentkit.providers.base import LLMProvider
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator
 
 
 class GoogleProvider(LLMProvider):
@@ -42,9 +50,9 @@ class GoogleProvider(LLMProvider):
     def __init__(
         self,
         model: str = "gemini-2.0-flash",
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         timeout: float = 60.0,
         **kwargs: Any,
     ) -> None:
@@ -56,11 +64,11 @@ class GoogleProvider(LLMProvider):
         if not self.api_key:
             raise MissingAPIKeyError("google")
 
-        self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models"
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta/models"
         self._client = httpx.Client(timeout=timeout)
         self._async_client = httpx.AsyncClient(timeout=timeout)
 
-    def _convert_messages(self, messages: List[Message]) -> Dict[str, Any]:
+    def _convert_messages(self, messages: list[Message]) -> dict[str, Any]:
         """Convert messages to Gemini format."""
         contents = []
         system_instruction = None
@@ -99,12 +107,12 @@ class GoogleProvider(LLMProvider):
                     }],
                 })
 
-        result: Dict[str, Any] = {"contents": contents}
+        result: dict[str, Any] = {"contents": contents}
         if system_instruction:
             result["systemInstruction"] = system_instruction
         return result
 
-    def _convert_tools(self, tools: List[ToolDefinition]) -> Dict[str, Any]:
+    def _convert_tools(self, tools: list[ToolDefinition]) -> dict[str, Any]:
         """Convert tools to Gemini format."""
         return {
             "functionDeclarations": [
@@ -119,14 +127,14 @@ class GoogleProvider(LLMProvider):
 
     def _build_request_body(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build request body for Gemini API."""
         body = self._convert_messages(messages)
 
-        generation_config: Dict[str, Any] = {}
+        generation_config: dict[str, Any] = {}
         if self.temperature != 0.7 or "temperature" in kwargs:
             generation_config["temperature"] = kwargs.get("temperature", self.temperature)
         if self.max_tokens or "max_tokens" in kwargs:
@@ -144,7 +152,7 @@ class GoogleProvider(LLMProvider):
 
         return body
 
-    def _parse_response(self, response_data: Dict[str, Any]) -> LLMResponse:
+    def _parse_response(self, response_data: dict[str, Any]) -> LLMResponse:
         """Parse Gemini API response."""
         candidates = response_data.get("candidates", [])
         if not candidates:
@@ -198,8 +206,8 @@ class GoogleProvider(LLMProvider):
 
     def complete(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion synchronously."""
@@ -230,8 +238,8 @@ class GoogleProvider(LLMProvider):
 
     async def acomplete(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion asynchronously."""
@@ -262,8 +270,8 @@ class GoogleProvider(LLMProvider):
 
     def stream(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> Iterator[str]:
         """Stream completion synchronously."""
@@ -288,8 +296,8 @@ class GoogleProvider(LLMProvider):
 
     async def astream(
         self,
-        messages: List[Message],
-        tools: Optional[List[ToolDefinition]] = None,
+        messages: list[Message],
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
         """Stream completion asynchronously."""
