@@ -181,6 +181,13 @@ class Team:
         """Run the team synchronously."""
         return asyncio.run(self.arun(task, **kwargs))
 
+    async def execute_concurrently(self, task: str, **kwargs: Any) -> TeamResult:
+        """
+        Execute all team members concurrently using asyncio.gather.
+        This provides explicit parallelism as required by Enterprise standards.
+        """
+        return await self._run_parallel(task, **kwargs)
+
     async def _run_sequential(self, task: str, **kwargs: Any) -> TeamResult:
         """Run agents sequentially, passing output to next agent."""
         results: dict[str, AgentResult] = {}

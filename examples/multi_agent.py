@@ -13,8 +13,8 @@ import asyncio
 
 from agentkit import Agent
 from agentkit.orchestration import Team, TeamConfig, TeamStrategy
-from agentkit.orchestration.workflow import Workflow, TransitionType
 from agentkit.orchestration.router import Router, RouteStrategy
+from agentkit.orchestration.workflow import TransitionType, Workflow
 
 
 async def main():

@@ -13,7 +13,7 @@ import json
 
 from agentkit import Agent
 from agentkit.core.types import Event, EventType
-from agentkit.utils.logging import setup_logging, get_logger
+from agentkit.utils.logging import get_logger, setup_logging
 
 
 async def main():
@@ -21,7 +21,7 @@ async def main():
 
     # Configure logging
     setup_logging(level="DEBUG", format="text")
-    logger = get_logger(__name__)
+    get_logger(__name__)
 
     # ============================================================
     # Example 1: Basic Debugging Hooks
@@ -94,7 +94,7 @@ async def main():
     @detailed_agent.on_tool_call_start
     def detailed_tool_monitor(event: Event):
         print("\n" + "-" * 40)
-        print(f"[TOOL CALL START]")
+        print("[TOOL CALL START]")
         print(f"  Agent: {event.agent_name}")
         print(f"  Tool: {event.data.get('tool_name')}")
         print(f"  Call ID: {event.data.get('tool_call_id')}")
@@ -104,7 +104,7 @@ async def main():
     @detailed_agent.on_tool_call_end
     def detailed_tool_result(event: Event):
         print("\n" + "-" * 40)
-        print(f"[TOOL CALL END]")
+        print("[TOOL CALL END]")
         print(f"  Tool: {event.data.get('tool_name')}")
         print(f"  Is Error: {event.data.get('is_error')}")
         print("-" * 40)

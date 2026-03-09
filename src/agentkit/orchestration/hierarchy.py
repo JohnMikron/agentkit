@@ -102,10 +102,11 @@ If the overarching objective has been fully achieved, synthesize the final answe
             full_prompt = f"{prompt}\n\nWork History:\n{history_text}"
 
             # Supervisor decides what to do
-            plan: SupervisorResponse = await self.supervisor.arun_structured(
+            plan_result = await self.supervisor.arun_structured(
                 prompt=full_prompt,
                 response_model=SupervisorResponse
-            ) # type: ignore
+            )
+            plan: SupervisorResponse = plan_result.data # type: ignore
 
             if plan.is_finished:
                 return plan.final_answer

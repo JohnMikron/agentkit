@@ -4,6 +4,7 @@ from agentkit.core.agent import Agent, AgentConfig, AgentHooks
 from agentkit.core.config import Settings, get_settings
 from agentkit.core.exceptions import AgentKitError
 from agentkit.core.memory import FileStorage, InMemoryStorage, Memory, MemoryEntry
+from agentkit.core.reflection import ReflectionAgent
 from agentkit.core.tools import Tool, ToolRegistry, get_builtin_tools, tool
 from agentkit.core.types import (
     AgentResult,
@@ -38,6 +39,8 @@ __all__ = [
     "MemoryEntry",
     # Types
     "Message",
+    # Reflection
+    "ReflectionAgent",
     "Role",
     # Config
     "Settings",

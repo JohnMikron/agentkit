@@ -41,3 +41,11 @@ storage.db
 chat.json
 vector_storage/
 .env
+.coverage
+*.db
+*.sqlite
+*.json
+site/
+poetry.lock
+.pytest_cache/
+__pycache__/

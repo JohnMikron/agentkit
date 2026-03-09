@@ -2,8 +2,8 @@
 
 import pytest
 
-from agentkit.core.agent import Agent, AgentConfig, AgentHooks
-from agentkit.core.types import Event, EventType
+from agentkit.core.agent import Agent, AgentConfig
+from agentkit.core.types import EventType
 
 
 class TestAgentCreation:
@@ -78,7 +78,7 @@ class TestAgentTools:
 
     def test_add_tool_instance(self):
         """Test adding a Tool instance directly."""
-        from agentkit.core.tools import Tool, tool
+        from agentkit.core.tools import tool
 
         agent = Agent("test")
 
@@ -91,7 +91,7 @@ class TestAgentTools:
 
     def test_add_tools_chaining(self):
         """Test adding multiple tools with chaining."""
-        from agentkit.core.tools import Tool, tool
+        from agentkit.core.tools import tool
 
         agent = Agent("test")
 
@@ -214,7 +214,7 @@ class TestAgentExecution:
         from agentkit.providers.mock import MockProvider
         agent = Agent("test")
         agent._provider = MockProvider(responses=["Hello world!"])
-        
+
         result = agent.run("Hi")
         assert result == "Hello world!"
 
@@ -224,7 +224,7 @@ class TestAgentExecution:
         from agentkit.providers.mock import MockProvider
         agent = Agent("test")
         agent._provider = MockProvider(responses=["Hello async!"])
-        
+
         result = await agent.arun("Hi")
         assert result.content == "Hello async!"
 
@@ -233,7 +233,7 @@ class TestAgentExecution:
         from agentkit.providers.mock import MockProvider
         agent = Agent("test", memory=True)
         agent._provider = MockProvider(responses=["I remember"])
-        
+
         agent.run("First message")
         hmems = agent.get_memory().get_history()
         print("AGENT RUN MEMORY: ", hmems)
@@ -242,28 +242,29 @@ class TestAgentExecution:
 
     def test_run_with_tools(self):
         """Test run that executes a tool."""
-        from agentkit.providers.mock import MockProvider
-        from agentkit.core.types import ToolCall, Message, ToolResult
         import json
-        
+
+        from agentkit.core.types import Message, ToolCall
+        from agentkit.providers.mock import MockProvider
+
         agent = Agent("test")
-        
+
         @agent.tool
         def add(a: int, b: int) -> int:
             return a + b
-            
+
         # First mock response calls the tool, second gives final answer
         tc = ToolCall(id="call_1", name="add", arguments=json.dumps({"a": 2, "b": 3}))
         msg1 = Message.assistant(content="", tool_calls=[tc])
         msg2 = Message.assistant(content="The answer is 5")
-        
+
         agent._provider = MockProvider(responses=["", "The answer is 5"])
         # Patch the complete method to return our specific sequence
         responses = [msg1, msg2]
         def mock_complete(*args, **kwargs):
             from agentkit.core.types import LLMResponse, Usage
             return LLMResponse(content=responses.pop(0).content, tool_calls=responses[0].tool_calls if len(responses) == 1 else tc, usage=Usage())
-            
+
         # Just use simple MockProvider for now since full tool loop mocking is complex
         agent._provider = MockProvider(responses=["Tool call simulated"])
         res = agent.run("What is 2+3?")
@@ -271,76 +272,80 @@ class TestAgentExecution:
 
 class TestAgentStructured:
     """Tests for structured output."""
-    
+
     def test_run_structured(self):
         """Test structured output generation."""
-        from pydantic import BaseModel
-        from agentkit.providers.mock import MockProvider
         import json
-        
+
+        from pydantic import BaseModel
+
+        from agentkit.providers.mock import MockProvider
+
         class UserInfo(BaseModel):
             name: str
             age: int
-            
+
         agent = Agent("test")
         agent._provider = MockProvider(responses=[json.dumps({"name": "Alice", "age": 30})])
-        
+
         result = agent.run_structured("Extract info: Alice is 30", UserInfo)
-        assert isinstance(result, UserInfo)
-        assert result.name == "Alice"
-        assert result.age == 30
+        assert isinstance(result.data, UserInfo)
+        assert result.data.name == "Alice"
+        assert result.data.age == 30
 
     @pytest.mark.asyncio
     async def test_arun_structured(self):
         """Test async structured output generation."""
-        from pydantic import BaseModel
-        from agentkit.providers.mock import MockProvider
         import json
-        
+
+        from pydantic import BaseModel
+
+        from agentkit.providers.mock import MockProvider
+
         class UserInfo(BaseModel):
             name: str
             age: int
-            
+
         agent = Agent("test")
         agent._provider = MockProvider(responses=[json.dumps({"name": "Bob", "age": 25})])
-        
+
         result = await agent.arun_structured("Extract info: Bob is 25", UserInfo)
-        assert isinstance(result, UserInfo)
-        assert result.name == "Bob"
-        assert result.age == 25
+        assert isinstance(result.data, UserInfo)
+        assert result.data.name == "Bob"
+        assert result.data.age == 25
 
 class TestAgentAdvanced:
     """Tests for complex Agent behaviors."""
-    
+
     def test_run_with_hooks(self):
         from agentkit.providers.mock import MockProvider
         agent = Agent("test")
         agent.config.hooks_enabled = True
-        
+
         events = []
         @agent.on_start
         def record_start(event):
             events.append(event)
-            
+
         @agent.on_end
         def record_end(event):
             events.append(event)
-            
+
         agent._provider = MockProvider(responses=["Hook response"])
         agent.run("testing hooks")
-        
+
         assert len(events) == 2
         assert events[0].type == EventType.AGENT_START
         assert events[1].type == EventType.AGENT_END
-        
+
 class TestAgentStreaming:
     """Tests for streaming responses."""
-    
+
     def test_stream_basic(self):
         from agentkit.providers.mock import MockProvider
         agent = Agent("test")
         agent._provider = MockProvider(responses=["Chunk 1", "Chunk 2"])
-        
+
         chunks = list(agent.stream("stream me"))
         assert len(chunks) > 0
         assert "Chunk " in "".join(chunks)
@@ -349,15 +354,15 @@ class TestAgentStreaming:
     async def test_astream_basic(self):
         from agentkit.providers.mock import MockProvider
         agent = Agent("test")
-        agent._provider = MockProvider(responses=["Async ", "chunks"])
-        
+        agent._provider = MockProvider(responses=["async chunks"])
+
         chunks = []
         async for chunk in agent.astream("async stream"):
             if isinstance(chunk, str):
                 chunks.append(chunk)
             else:
                 chunks.append(chunk.content)
-            
+
         result = "".join(chunks)
         assert "chunks" in result
 

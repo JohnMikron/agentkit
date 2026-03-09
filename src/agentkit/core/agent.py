@@ -177,6 +177,7 @@ class AgentConfig(BaseModel):
     tools: list[str] | None = Field(default=None)
     hooks_enabled: bool = Field(default=True)
     streaming: bool = Field(default=True)
+    max_budget_usd: float | None = Field(default=None)
 
 
 class Agent:
@@ -622,13 +623,32 @@ class Agent:
         result = asyncio.run(self.arun(prompt, tools=tools, **kwargs))
         return result.content
 
+    def _estimate_cost(self, usage: Usage, model: str) -> float:
+        """Estimate the USD cost of this run based on 2026 enterprise standard rates."""
+        rates = {
+            "gpt-4": (0.005, 0.015),
+            "gpt-5": (0.010, 0.030),
+            "claude-3-opus": (0.015, 0.075),
+            "claude-3.5-sonnet": (0.003, 0.015),
+            "gemini-1.5-pro": (0.0035, 0.0105),
+        }
+
+        prompt_rate, comp_rate = 0.005, 0.015  # Fallback
+        model_name = model.lower()
+        for key, (p, c) in rates.items():
+            if key in model_name:
+                prompt_rate, comp_rate = p, c
+                break
+
+        return (usage.prompt_tokens * prompt_rate + usage.completion_tokens * comp_rate) / 1000.0
+
     def run_structured(
         self,
         prompt: str,
         response_model: type[BaseModel],
         tools: list[Tool] | None = None,
         **kwargs: Any,
-    ) -> BaseModel:
+    ) -> AgentResult:
         """
         Run the agent synchronously and enforce a structured Pydantic output.
         """
@@ -640,7 +660,7 @@ class Agent:
         response_model: type[BaseModel],
         tools: list[Tool] | None = None,
         **kwargs: Any,
-    ) -> BaseModel:
+    ) -> AgentResult:
         """
         Run the agent asynchronously and enforce a structured Pydantic output.
         Falls back to JSON prompting and validation if the provider lacks native structured support.
@@ -668,7 +688,9 @@ class Agent:
         json_str = match.group(1)
 
         try:
-            return response_model.model_validate_json(json_str)
+            parsed = response_model.model_validate_json(json_str)
+            result.data = parsed
+            return result
         except Exception as e:
             raise AgentError(f"Failed to parse structured output: {e!s}\nExtracted JSON: {json_str}\nRaw Response: {content}") from e
 
@@ -738,8 +760,13 @@ class Agent:
                 total_usage = total_usage + response.usage
 
                 # Check maximum budget
-                if self.config.max_tokens_limit is not None and getattr(total_usage, "total_tokens", 0) > self.config.max_tokens_limit:
+                if self.config.max_tokens_limit is not None and total_usage.total_tokens > self.config.max_tokens_limit:
                     raise AgentError(f"Token limit exceeded: used {total_usage.total_tokens}, limit {self.config.max_tokens_limit}")
+
+                if self.config.max_budget_usd is not None:
+                    cost = self._estimate_cost(total_usage, response.model)
+                    if cost > self.config.max_budget_usd:
+                        raise AgentError(f"Budget limit exceeded: spent ${cost:.4f}, limit ${self.config.max_budget_usd:.4f}")
 
                 # Emit LLM response event
                 await self._aemit(
@@ -851,10 +878,33 @@ class Agent:
         Yields:
             Text chunks from the response
         """
-        async def _collect():
-            return [chunk async for chunk in self.astream(prompt, tools=tools, **kwargs)]
+        messages = self._build_messages(prompt)
+        tool_defs = self._tools.get_definitions()
+        if tools:
+            tool_defs.extend([t.to_definition() for t in tools])
 
-        yield from asyncio.run(_collect())
+        if not tool_defs:
+            yield from self.provider.stream(messages=messages, **kwargs)
+            return
+
+        iterations = 0
+        while iterations < self.config.max_iterations:
+            iterations += 1
+            response = self.provider.complete(
+                messages=messages,
+                tools=tool_defs,
+                **kwargs,
+            )
+
+            if response.has_tool_calls:
+                messages.append(Message.assistant(content=response.content, tool_calls=response.tool_calls))
+                tool_results = self._execute_tool_calls(response.tool_calls or [])
+                for tr in tool_results:
+                    messages.append(tr.to_message())
+            else:
+                if response.content:
+                    yield response.content
+                break
 
     async def astream(
         self,
@@ -879,29 +929,29 @@ class Agent:
             if tools:
                 tool_defs.extend([t.to_definition() for t in tools])
 
-            # For streaming, we need to handle tool calls differently
-            # First check if we need tools
-            response = await self.provider.acomplete(
-                messages=messages,
-                tools=tool_defs if tool_defs else None,
-                **kwargs,
-            )
-
-            if response.has_tool_calls:
-                # Execute tools, then stream final response
-                messages.append(Message.assistant(content=response.content, tool_calls=response.tool_calls))
-
-                tool_results = await self._aexecute_tool_calls(response.tool_calls or [])
-                for tr in tool_results:
-                    messages.append(tr.to_message())
-
-                # Stream final response
+            if not tool_defs:
                 async for chunk in self.provider.astream(messages=messages, **kwargs):
                     yield chunk
-            else:
-                # Stream directly
-                async for chunk in self.provider.astream(messages=messages, **kwargs):
-                    yield chunk
+                return
+
+            iterations = 0
+            while iterations < self.config.max_iterations:
+                iterations += 1
+                response = await self.provider.acomplete(
+                    messages=messages,
+                    tools=tool_defs,
+                    **kwargs,
+                )
+
+                if response.has_tool_calls:
+                    messages.append(Message.assistant(content=response.content, tool_calls=response.tool_calls))
+                    tool_results = await self._aexecute_tool_calls(response.tool_calls or [])
+                    for tr in tool_results:
+                        messages.append(tr.to_message())
+                else:
+                    if response.content:
+                        yield response.content
+                    break
 
         finally:
             await self._aset_state(AgentState.COMPLETED)

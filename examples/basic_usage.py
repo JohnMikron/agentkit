@@ -9,11 +9,8 @@ This example demonstrates:
 """
 
 import asyncio
-import os
 
-# Set your API key (or set OPENAI_API_KEY environment variable)
-# os.environ["OPENAI_API_KEY"] = "sk-..."
-
+    # Set your API key via agent config or environment var
 from agentkit import Agent
 
 
@@ -34,11 +31,7 @@ async def main():
         """Greet someone by name."""
         return f"Hello, {name}! Nice to meet you."
 
-    # Run the agent
-    # Note: This requires OPENAI_API_KEY to be set
-    # result = await agent.arun("Greet Alice")
-    # print(f"Response: {result.content}")
-
+    # Run the agent using basic run commands.
     print("\nAgent created with 1 tool:")
     print(f"  - {agent.tools[0].name}: {agent.tools[0].description}")
 

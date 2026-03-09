@@ -78,7 +78,7 @@ class ReflectionAgent:
         prompt: str,
         response_model: type[BaseModel],
         **kwargs: Any
-    ) -> BaseModel:
+    ) -> AgentResult:
         """
         Run the reflection loop and return a structured output.
 

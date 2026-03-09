@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentkit.core.types import AgentResult, AgentState
+from agentkit.orchestration.state import SharedState
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -102,18 +103,6 @@ class Transition:
     type: TransitionType = TransitionType.ALWAYS
     condition: Callable[[AgentResult], bool] | None = None
 
-
-class WorkflowContext(BaseModel):
-    """Strongly typed context for workflow execution."""
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-
-    input: Any = None
-
-    def get_step_result(self, step_name: str) -> AgentResult | None:
-        """Fetch a specific step's resulting AgentResult directly."""
-        return getattr(self, f"{step_name}_result_obj", None)
-
-
 class WorkflowState(BaseModel):
     """State of a workflow execution."""
 
@@ -122,7 +111,7 @@ class WorkflowState(BaseModel):
     current_step: str | None = None
     completed_steps: list[str] = Field(default_factory=list)
     step_results: dict[str, AgentResult] = Field(default_factory=dict)
-    context: WorkflowContext = Field(default_factory=WorkflowContext)
+    context: SharedState = Field(default_factory=SharedState)
     iterations: int = 0
 
 
@@ -179,7 +168,7 @@ class Workflow:
         prompt_template: str = "{{ input }}",
         timeout: float | None = None,
         retry_count: int = 0,
-        on_enter: Callable[[WorkflowContext], None] | None = None,
+        on_enter: Callable[[SharedState], None] | None = None,
         on_exit: Callable[[AgentResult], None] | None = None,
     ) -> Workflow:
         """
@@ -269,12 +258,16 @@ class Workflow:
         self._entry_step = step_name
         return self
 
-    def _render_prompt(self, template: str, context: WorkflowContext) -> str:
+    def _render_prompt(self, template: str, context: SharedState) -> str:
         """Render a Jinja2 template with context."""
         from jinja2 import Template
 
         tmpl = Template(template)
-        return tmpl.render(**context.model_dump())
+        kwargs = context.model_dump()
+        kwargs.update(context.__dict__)
+        if hasattr(context, "__pydantic_extra__") and context.__pydantic_extra__:
+            kwargs.update(context.__pydantic_extra__)
+        return tmpl.render(**kwargs)
 
     def _get_next_step(self, current: str, result: AgentResult) -> str | None:
         """Determine the next step based on transitions."""
@@ -319,7 +312,7 @@ class Workflow:
             )
 
         # Initialize state
-        initial_context = WorkflowContext()
+        initial_context = SharedState()
         if context:
             for k, v in context.items():
                 setattr(initial_context, k, v)

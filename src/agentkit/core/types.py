@@ -316,6 +316,7 @@ class AgentResult(BaseModel):
         usage: Total token usage
         iterations: Number of iterations performed
         state: Final state of the agent
+        data: Structured data returned from the execution (e.g. Pydantic model)
         error: Error message if failed
         latency_ms: Total execution time in milliseconds
         metadata: Additional metadata
@@ -331,6 +332,7 @@ class AgentResult(BaseModel):
     usage: Usage = Field(default_factory=Usage)
     iterations: int = 0
     state: AgentState = AgentState.COMPLETED
+    data: Any | None = None
     error: str | None = None
     latency_ms: float | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

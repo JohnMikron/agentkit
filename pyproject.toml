@@ -71,9 +71,6 @@ dependencies = [
     "rich>=13.7.0",
     "typer>=0.9.0",
     "python-dotenv>=1.0.0",
-    "requests>=2.31.0",
-    "pymupdf>=1.23.0",
-    "beautifulsoup4>=4.12.0",
 ]
 
 [project.optional-dependencies]
@@ -93,6 +90,12 @@ telemetry = [
     "opentelemetry-sdk>=1.22.0",
     "opentelemetry-exporter-otlp>=1.22.0",
 ]
+web = [
+    "beautifulsoup4>=4.12.0",
+]
+pdf = [
+    "pymupdf>=1.23.0",
+]
 all = [
     "openai>=1.12.0",
     "anthropic>=0.18.0",
@@ -106,6 +109,8 @@ all = [
     "opentelemetry-api>=1.22.0",
     "opentelemetry-sdk>=1.22.0",
     "opentelemetry-exporter-otlp>=1.22.0",
+    "beautifulsoup4>=4.12.0",
+    "pymupdf>=1.23.0",
 ]
 dev = [
     "pytest>=8.0.0",

@@ -1,15 +1,17 @@
+
 import pytest
-import os
-from agentkit.core.types import Message, Role
+
+from agentkit.core.exceptions import MissingAPIKeyError
+from agentkit.core.types import Message
 from agentkit.providers import (
-    OpenAIProvider,
     AnthropicProvider,
     GoogleProvider,
     MistralProvider,
     MockProvider,
     OllamaProvider,
+    OpenAIProvider,
 )
-from agentkit.core.exceptions import MissingAPIKeyError
+
 
 @pytest.fixture
 def mock_messages():
@@ -91,7 +93,7 @@ class TestProviderFormatters:
         assert len(converted) == 1
         assert converted[0]["role"] == "user"
         assert converted[0]["content"] == "Hi"
-        
+
         # System messages are extracted out
         sys_msg = Message.system("System prompt")
         system_prompt, converted = provider._convert_messages([sys_msg])
