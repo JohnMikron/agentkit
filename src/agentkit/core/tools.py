@@ -401,8 +401,9 @@ def google_search(query: str) -> str:
     Args:
         query: The search query
     """
-    return f"Google search results for: {query}\n1. [2026 AI Trends] https://example.com/ai-2026\n2. [AgentKit v1.2 Release] https://github.com/JohnMikron/agentkit"
-
+    raise NotImplementedError(
+        "Google Search API is not implemented in core yet. Use 'duckduckgo_search' or provide your own SERP tool."
+    )
 
 @tool
 def duckduckgo_search(query: str) -> str:
@@ -451,13 +452,13 @@ class ToolRegistry:
         """Initialize an empty tool registry."""
         self._tools: dict[str, Tool] = {}
 
-    def add(self, tool: Tool) -> ToolRegistry:
+    def add(self, tool: Tool, overwrite: bool = False) -> ToolRegistry:
         """
         Add a tool to the registry.
 
         Returns self for chaining.
         """
-        if tool.name in self._tools:
+        if tool.name in self._tools and not overwrite:
             raise ToolError(f"Tool '{tool.name}' already registered", tool_name=tool.name)
         self._tools[tool.name] = tool
         return self

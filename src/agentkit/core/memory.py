@@ -255,7 +255,8 @@ class FileStorage(MemoryStorage[MemoryEntry]):
         self.autosave = autosave
         self._entries: list[MemoryEntry] = []
         self._by_id: dict[str, MemoryEntry] = {}
-        self._lock = asyncio.Lock()
+        import threading
+        self._lock = threading.Lock()
 
         # Load existing entries
         self._load_from_file()
@@ -280,54 +281,61 @@ class FileStorage(MemoryStorage[MemoryEntry]):
 
     def save(self, entry: MemoryEntry) -> str:
         """Save a memory entry."""
-        self._entries.append(entry)
-        self._by_id[entry.id] = entry
+        with self._lock:
+            self._entries.append(entry)
+            self._by_id[entry.id] = entry
 
-        if self.max_entries and len(self._entries) > self.max_entries:
-            removed = self._entries.pop(0)
-            self._by_id.pop(removed.id, None)
+            if self.max_entries and len(self._entries) > self.max_entries:
+                removed = self._entries.pop(0)
+                self._by_id.pop(removed.id, None)
 
-        if self.autosave:
-            self._save_to_file()
+            if self.autosave:
+                self._save_to_file()
 
         return entry.id
 
     def load(self, limit: int | None = None) -> list[MemoryEntry]:
         """Load memory entries."""
-        if limit:
-            return self._entries[-limit:]
-        return self._entries.copy()
+        with self._lock:
+            if limit:
+                return self._entries[-limit:]
+            return self._entries.copy()
 
     def get(self, entry_id: str) -> MemoryEntry | None:
         """Get a specific entry by ID."""
-        return self._by_id.get(entry_id)
+        with self._lock:
+            return self._by_id.get(entry_id)
 
     def delete(self, entry_id: str) -> bool:
         """Delete an entry by ID."""
-        if entry_id in self._by_id:
-            entry = self._by_id.pop(entry_id)
-            self._entries.remove(entry)
-            if self.autosave:
-                self._save_to_file()
-            return True
-        return False
+        with self._lock:
+            if entry_id in self._by_id:
+                entry = self._by_id.pop(entry_id)
+                self._entries.remove(entry)
+                if self.autosave:
+                    self._save_to_file()
+                return True
+            return False
 
     def clear(self) -> None:
         """Clear all entries."""
-        self._entries.clear()
-        self._by_id.clear()
-        if self.autosave:
-            self._save_to_file()
+        with self._lock:
+            self._entries.clear()
+            self._by_id.clear()
+            if self.autosave:
+                self._save_to_file()
 
     def count(self) -> int:
         """Get the number of stored entries."""
-        return len(self._entries)
+        with self._lock:
+            return len(self._entries)
 
     def search(self, query: str, limit: int = 10) -> list[MemoryEntry]:
         """Search for entries containing the query."""
-        query_lower = query.lower()
-        results = [e for e in self._entries if query_lower in e.content.lower()]
-        return results[-limit:]
+        with self._lock:
+            query_lower = query.lower()
+            results = [e for e in self._entries if query_lower in e.content.lower()]
+            return results[-limit:]
 
 
 class RedisStorage(MemoryStorage[MemoryEntry]):

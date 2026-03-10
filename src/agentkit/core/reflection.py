@@ -74,6 +74,14 @@ class ReflectionAgent:
 
         return asyncio.run(self.arun(prompt, **kwargs))
 
+    def run_structured(
+        self, prompt: str, response_model: type[BaseModel], **kwargs: Any
+    ) -> AgentResult:
+        """Run the reflection loop and return a structured output synchronously."""
+        import asyncio
+
+        return asyncio.run(self.arun_structured(prompt, response_model, **kwargs))
+
     async def arun_structured(
         self, prompt: str, response_model: type[BaseModel], **kwargs: Any
     ) -> AgentResult:

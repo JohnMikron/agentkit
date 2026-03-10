@@ -360,6 +360,7 @@ class EventType(str, Enum):
     TOOL_CALL_ERROR = "tool_call_error"
     MESSAGE_ADDED = "message_added"
     STATE_CHANGE = "state_change"
+    AGENT_THOUGHT = "agent_thought"
 
 
 @dataclass

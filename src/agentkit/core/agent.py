@@ -124,6 +124,7 @@ class AgentHooks:
             EventType.TOOL_CALL_END: self._on_tool_call_end,
             EventType.STATE_CHANGE: self._on_state_change,
             EventType.MESSAGE_ADDED: self._on_message,
+            EventType.AGENT_THOUGHT: self._on_thought,
         }
 
         hooks = hook_map.get(event.type, [])
@@ -243,7 +244,7 @@ class Agent:
         else:
             self.config = AgentConfig(
                 name=name,
-                model=model or kwargs.get("model", "gpt-4o-mini"),
+                model=model or kwargs.get("model", "gpt-5.3-chat-latest"),
                 system_prompt=system_prompt or kwargs.get("system_prompt"),
                 memory_enabled=memory or kwargs.get("memory_enabled", False),
                 **{k: v for k, v in kwargs.items() if k in AgentConfig.model_fields},
@@ -567,7 +568,7 @@ class Agent:
 
         # Add memory history if enabled
         if self._memory is not None:
-            history = self._memory.get_history(limit=self.config.max_iterations)
+            history = self._memory.get_history(limit=self.config.memory_max_entries)
             messages.extend(history)
 
         # Add current input
@@ -712,7 +713,10 @@ class Agent:
 
         # Robust JSON extraction using Regex
         content = result.content
-        match = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", content)
+        match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\}|\[[\s\S]*?\])\s*```", content)
+        if not match:
+            # Fallback to non-greedy JSON block search
+            match = re.search(r"(\{[\s\S]*?\}|\[[\s\S]*?\])", content)
         if not match:
             raise AgentError(
                 f"Could not extract JSON from agent response.\nRaw Response: {content}"
@@ -964,7 +968,13 @@ class Agent:
             tool_defs.extend([t.to_definition() for t in tools])
 
         if not tool_defs:
-            yield from self.provider.stream(messages=messages, **kwargs)
+            full_content = ""
+            for chunk in self.provider.stream(messages=messages, **kwargs):
+                full_content += chunk
+                yield chunk
+            if self._memory and full_content:
+                self._memory.add_user_message(prompt)
+                self._memory.add_assistant_message(full_content)
             return
 
         iterations = 0
@@ -976,6 +986,8 @@ class Agent:
                 **kwargs,
             )
 
+            self._total_usage = self._total_usage + response.usage
+
             if response.has_tool_calls:
                 messages.append(
                     Message.assistant(content=response.content, tool_calls=response.tool_calls)
@@ -986,6 +998,9 @@ class Agent:
                         messages.append(tr.to_message())
             else:
                 if response.content:
+                    if self._memory:
+                        self._memory.add_user_message(prompt)
+                        self._memory.add_assistant_message(response.content)
                     yield response.content
                 break
 
@@ -1018,8 +1033,13 @@ class Agent:
                 tool_defs.extend([t.to_definition() for t in tools])
 
             if not tool_defs:
+                full_content = ""
                 async for chunk in self.provider.astream(messages=messages, **kwargs):
+                    full_content += chunk
                     yield chunk
+                if self._memory and full_content:
+                    self._memory.add_user_message(prompt)
+                    self._memory.add_assistant_message(full_content)
                 return
 
             iterations = 0
@@ -1031,6 +1051,8 @@ class Agent:
                     **kwargs,
                 )
 
+                self._total_usage = self._total_usage + response.usage
+
                 if response.has_tool_calls:
                     messages.append(
                         Message.assistant(content=response.content, tool_calls=response.tool_calls)
@@ -1040,6 +1062,9 @@ class Agent:
                         messages.append(tr.to_message())
                 else:
                     if response.content:
+                        if self._memory:
+                            self._memory.add_user_message(prompt)
+                            self._memory.add_assistant_message(response.content)
                         yield response.content
                     break
 

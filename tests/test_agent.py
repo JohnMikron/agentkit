@@ -13,7 +13,7 @@ class TestAgentCreation:
         """Test creating a basic agent."""
         agent = Agent("test")
         assert agent.name == "test"
-        assert agent.config.model == "gpt-4o-mini"
+        assert agent.config.model == "gpt-5.3-chat-latest"
         assert len(agent.tools) == 0
 
     def test_with_custom_model(self):
