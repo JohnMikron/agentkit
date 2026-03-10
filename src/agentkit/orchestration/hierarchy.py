@@ -124,15 +124,18 @@ If the overarching objective has been fully achieved, synthesize the final answe
             self.history.append(Message.assistant(f"Supervisor decided: {plan.thoughts}"))
 
             # Execute delegated tasks concurrently
-            # In a real system, you might use asyncio.gather, but doing sequentially for safety here
-            for task in plan.delegations:
-                if task.worker_name not in self.workers:
-                    worker_res = f"Cannot delegate to {task.worker_name}: Worker not found."
-                else:
-                    worker = self.workers[task.worker_name]
-                    result_obj = await worker.arun(task.instructions)
-                    worker_res = result_obj.content
-
+            import asyncio
+            
+            async def _execute_worker_task(t: DelegatedTask) -> str:
+                if t.worker_name not in self.workers:
+                    return f"Cannot delegate to {t.worker_name}: Worker not found."
+                w = self.workers[t.worker_name]
+                res_obj = await w.arun(t.instructions)
+                return str(res_obj.content)
+                
+            worker_results = await asyncio.gather(*[_execute_worker_task(t) for t in plan.delegations])
+            
+            for task, worker_res in zip(plan.delegations, worker_results):
                 self.history.append(
                     Message.user(f"Worker {task.worker_name} reported:\n{worker_res}")
                 )
