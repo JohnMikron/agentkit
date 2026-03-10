@@ -92,6 +92,8 @@ class MCPServer:
         self._resources: dict[str, MCPResource] = {}
         self._prompts: dict[str, MCPPrompt] = {}
         self._tool_handlers: dict[str, Callable[..., Any]] = {}
+        self._resource_contents: dict[str, Any] = {}
+        self._prompt_templates: dict[str, str] = {}
 
     def add_tool(
         self,
@@ -123,8 +125,6 @@ class MCPServer:
             mime_type=mime_type,
         )
         # Store content separately
-        if not hasattr(self, "_resource_contents"):
-            self._resource_contents = {}
         self._resource_contents[uri] = content
         return self
 
@@ -141,8 +141,6 @@ class MCPServer:
             description=description,
             arguments=arguments or [],
         )
-        if not hasattr(self, "_prompt_templates"):
-            self._prompt_templates = {}
         self._prompt_templates[name] = template
         return self
 
@@ -156,12 +154,17 @@ class MCPServer:
         Returns:
             self for chaining
         """
+        def make_handler(t: Any) -> Callable[..., Any]:
+            def handler(args: dict[str, Any]) -> Any:
+                return t.execute(arguments=args)
+            return handler
+
         for tool in agent.tools:
             self.add_tool(
                 name=tool.name,
                 description=tool.description,
                 input_schema=tool.parameters,
-                handler=lambda args, t=tool: t.execute(args),
+                handler=make_handler(tool),
             )
         return self
 
@@ -371,7 +374,7 @@ class MCPServer:
 
         reader = asyncio.StreamReader()
         protocol = asyncio.StreamReaderProtocol(reader)
-        await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, sys.stdin)
+        await asyncio.get_running_loop().connect_read_pipe(lambda: protocol, sys.stdin)
 
         writer = sys.stdout
 
@@ -494,10 +497,11 @@ class MCPClient:
         if name not in self._tools:
             raise ValueError(f"Tool not found: {name}")
 
+        import uuid
         response = await self._send_request(
             {
                 "jsonrpc": "2.0",
-                "id": hash(name) % 10000,  # Simple ID generation
+                "id": str(uuid.uuid4()),
                 "method": "tools/call",
                 "params": {
                     "name": name,

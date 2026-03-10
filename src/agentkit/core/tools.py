@@ -698,6 +698,7 @@ BUILTIN_TOOLS: list[Any] = [
     current_datetime,
     json_parse,
     json_stringify,
+    duckduckgo_search,
 ]
 
 

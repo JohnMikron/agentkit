@@ -71,12 +71,24 @@ class InMemoryCache(Cache[T]):
     def get(self, key: str) -> T | None:
         """Get a value from cache."""
         from typing import cast
+        import time
 
-        return cast("T | None", self._cache.get(key))
+        if key in self._cache:
+            val_tuple = self._cache.get(key)
+            if isinstance(val_tuple, tuple) and len(val_tuple) == 2:
+                value, expiry = val_tuple
+                if time.time() > expiry:
+                    del self._cache[key]
+                    return None
+                return cast("T | None", value)
+            return cast("T | None", val_tuple)
+        return None
 
     def set(self, key: str, value: T, ttl: int | None = None) -> None:
         """Set a value in cache."""
-        self._cache[key] = value
+        import time
+        expiry = time.time() + (ttl if ttl is not None else self.default_ttl)
+        self._cache[key] = (value, expiry)
 
     def delete(self, key: str) -> bool:
         """Delete a value from cache."""
@@ -208,9 +220,15 @@ class SemanticCache(Cache[str]):
 
         entry = results[0]
         # Check TTL
+        import time
         expiry = entry.metadata.get("expiry", 0)
         if time.time() > expiry:
             self._storage.delete(entry.id)
+            return None
+
+        import difflib
+        similarity = difflib.SequenceMatcher(None, key, entry.content).ratio()
+        if similarity < self.similarity_threshold:
             return None
 
         return entry.metadata.get("response")
@@ -254,12 +272,15 @@ class SemanticCache(Cache[str]):
             return None
 
         entry = results[0]
+        import time
         if time.time() > entry.metadata.get("expiry", 0):
             return None
 
-        # We might want to check the actual distance/similarity here,
-        # but ChromaDB search returns the top match.
-        # For a true threshold, we'd need access to Chroma's distances.
+        import difflib
+        similarity = difflib.SequenceMatcher(None, prompt, entry.content).ratio()
+        if similarity < self.similarity_threshold:
+            return None
+
         return entry.metadata.get("response")
 
 
@@ -284,29 +305,54 @@ def cached(
         Decorated function
     """
     import functools
+    import asyncio
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            # Generate cache key
-            if key_func:
-                key = key_func(*args, **kwargs)
-            else:
-                key = Cache.make_key(func.__name__, *args, **kwargs)
+        if asyncio.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                # Generate cache key
+                if key_func:
+                    key = key_func(*args, **kwargs)
+                else:
+                    key = Cache.make_key(func.__name__, *args, **kwargs)
 
-            # Check cache
-            result = cache.get(key)
-            if result is not None:
+                # Check cache
+                result = cache.get(key)
+                if result is not None:
+                    return result
+
+                # Execute function
+                result = await func(*args, **kwargs)
+
+                # Cache result
+                cache.set(key, result, ttl)
+
                 return result
 
-            # Execute function
-            result = func(*args, **kwargs)
+            return async_wrapper
+        else:
+            @functools.wraps(func)
+            def wrapper(*args: Any, **kwargs: Any) -> Any:
+                # Generate cache key
+                if key_func:
+                    key = key_func(*args, **kwargs)
+                else:
+                    key = Cache.make_key(func.__name__, *args, **kwargs)
 
-            # Cache result
-            cache.set(key, result, ttl)
+                # Check cache
+                result = cache.get(key)
+                if result is not None:
+                    return result
 
-            return result
+                # Execute function
+                result = func(*args, **kwargs)
 
-        return wrapper
+                # Cache result
+                cache.set(key, result, ttl)
+
+                return result
+
+            return wrapper
 
     return decorator

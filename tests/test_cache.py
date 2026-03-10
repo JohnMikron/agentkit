@@ -13,7 +13,7 @@ def mock_vector_storage():
         yield mock_instance
 
 def test_semantic_cache_set_get(mock_vector_storage):
-    cache = SemanticCache()
+    cache = SemanticCache(similarity_threshold=0.9)
 
     # Mock search to return a memory entry
     from agentkit.core.memory import MemoryEntry

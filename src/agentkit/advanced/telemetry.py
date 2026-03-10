@@ -41,8 +41,8 @@ class OpenTelemetryHook:
             )
         self.tracer: Tracer = trace.get_tracer(tracer_name)
 
-        # State tracking for spans
         self._active_spans: dict[str, Span] = {}
+        self._active_tool_spans: dict[str, list[Span]] = {}
 
     def attach(self, agent: Agent) -> None:
         """Attach this hook to an agent's lifecycle."""
@@ -98,21 +98,26 @@ class OpenTelemetryHook:
         span.set_attribute("tool.name", tool_name)
         span.set_attribute("tool.call_id", call_id)
 
-        # Serialize arguments safely
         args = event.data.get("arguments", {})
         span.set_attribute("tool.arguments", str(args))
 
-        self._active_spans[f"tool_{call_id}"] = span
+        key = f"tool_{call_id}"
+        if key not in self._active_tool_spans:
+            self._active_tool_spans[key] = []
+        self._active_tool_spans[key].append(span)
 
     def on_tool_call_end(self, event: Event) -> None:
         call_id = event.data.get("tool_call_id", "unknown")
         is_error = event.data.get("is_error", False)
 
-        span = self._active_spans.get(f"tool_{call_id}")
-        if span:
+        key = f"tool_{call_id}"
+        if key in self._active_tool_spans and self._active_tool_spans[key]:
+            span = self._active_tool_spans[key].pop()
             if is_error:
                 span.set_status(Status(StatusCode.ERROR))
             else:
                 span.set_status(Status(StatusCode.OK))
             span.end()
-            self._active_spans.pop(f"tool_{call_id}", None)
+            
+            if not self._active_tool_spans[key]:
+                del self._active_tool_spans[key]
