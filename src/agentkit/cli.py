@@ -11,6 +11,7 @@ Provides tools for:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -63,7 +64,7 @@ def run(
         _run_sync(agent, prompt)
 
 
-def _load_tools(agent, tools_file: str) -> None:
+def _load_tools(agent: Any, tools_file: str) -> None:
     """Load tools from a Python file."""
     path = Path(tools_file)
     if not path.exists():
@@ -85,7 +86,7 @@ def _load_tools(agent, tools_file: str) -> None:
                 agent.tool(obj)
 
 
-def _run_streaming(agent, prompt: str) -> None:
+def _run_streaming(agent: Any, prompt: str) -> None:
     """Run agent with streaming output."""
     console.print("\n[bold green]Assistant:[/bold green]")
 
@@ -98,7 +99,7 @@ def _run_streaming(agent, prompt: str) -> None:
         raise typer.Exit(1) from e
 
 
-def _run_sync(agent, prompt: str) -> None:
+def _run_sync(agent: Any, prompt: str) -> None:
     """Run agent without streaming."""
     with console.status("[bold green]Thinking...[/bold green]"):
         try:
@@ -133,7 +134,9 @@ def providers() -> None:
         key_name = env_var.split(" ")[0]
         is_configured = bool(os.environ.get(key_name))
 
-        status = "[green]✓ Configured[/green]" if is_configured else "[yellow]○ Not configured[/yellow]"
+        status = (
+            "[green]✓ Configured[/green]" if is_configured else "[yellow]○ Not configured[/yellow]"
+        )
         table.add_row(provider, status, models)
 
     console.print(table)
@@ -156,7 +159,9 @@ def models(
                 for model in models_list:
                     console.print(f"  • {model}")
             else:
-                console.print("[yellow]No models found. Pull a model with: ollama pull llama3.2[/yellow]")
+                console.print(
+                    "[yellow]No models found. Pull a model with: ollama pull llama3.2[/yellow]"
+                )
         except Exception as e:
             console.print(f"[red]Error connecting to Ollama: {e}[/red]")
 
@@ -164,7 +169,11 @@ def models(
         # Show recommended models for each provider
         models_map = {
             "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1", "o1-mini"],
-            "anthropic": ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest", "claude-3-opus-latest"],
+            "anthropic": [
+                "claude-3-5-sonnet-latest",
+                "claude-3-5-haiku-latest",
+                "claude-3-opus-latest",
+            ],
             "google": ["gemini-2.0-flash", "gemini-2.0-pro"],
             "mistral": ["mistral-large-latest", "mistral-small-latest", "codestral-latest"],
         }

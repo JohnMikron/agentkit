@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from typing import Any
 
 import structlog
 from rich.console import Console
@@ -45,9 +46,14 @@ def setup_logging(
         structlog.processors.StackInfoRenderer(),
     ]
 
+    processors: list[Any]
     if format == "json":
         # JSON format for production
-        processors = [*shared_processors, structlog.processors.format_exc_info, structlog.processors.JSONRenderer()]
+        processors = [
+            *shared_processors,
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ]
     else:
         # Pretty format for development
         processors = [*shared_processors, structlog.dev.ConsoleRenderer(colors=True)]
@@ -112,4 +118,4 @@ def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     Returns:
         A structlog logger instance
     """
-    return structlog.get_logger(name)
+    return structlog.get_logger(name)  # type: ignore[no-any-return]

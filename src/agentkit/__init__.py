@@ -17,7 +17,7 @@ Example:
     result = await agent.run("Search for Python news")
 """
 
-from agentkit.core.agent import Agent, AgentConfig, AgentResult
+from agentkit.core.agent import Agent, AgentConfig
 from agentkit.core.exceptions import AgentKitError
 from agentkit.core.memory import InMemoryStorage, Memory, SQLiteStorage, VectorStorage
 from agentkit.core.tools import Tool, tool

@@ -7,7 +7,8 @@ from __future__ import annotations
 from pathlib import Path
 
 try:
-    import fitz  # PyMuPDF
+    import fitz  # type: ignore[import-not-found]
+
     HAS_PYMUPDF = True
 except ImportError:
     HAS_PYMUPDF = False
@@ -40,7 +41,7 @@ def read_pdf(file_path: str, max_pages: int | None = None) -> str:
 
         for i in range(num_pages):
             page = doc.load_page(i)
-            text_parts.append(f"--- Page {i+1} ---\n" + page.get_text())
+            text_parts.append(f"--- Page {i + 1} ---\n" + page.get_text())
 
         return "\n\n".join(text_parts)
     except Exception as e:

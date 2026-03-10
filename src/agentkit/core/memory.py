@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from agentkit.core.types import Message, Role
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
 
 T = TypeVar("T")
 
@@ -65,7 +65,9 @@ class MemoryEntry:
             id=data.get("id", ""),
             role=data.get("role", "user"),
             content=data.get("content", ""),
-            timestamp=datetime.fromisoformat(data["timestamp"]) if isinstance(data.get("timestamp"), str) else data.get("timestamp", datetime.utcnow()),
+            timestamp=datetime.fromisoformat(data["timestamp"])
+            if isinstance(data.get("timestamp"), str)
+            else data.get("timestamp", datetime.utcnow()),
             metadata=data.get("metadata", {}),
         )
 
@@ -89,6 +91,7 @@ class MemoryEntry:
     def to_message(self) -> Message:
         """Convert to a Message object."""
         from agentkit.core.types import ToolCall
+
         meta = self.metadata.copy()
         name = meta.pop("name", None)
         tool_call_id = meta.pop("tool_call_id", None)
@@ -352,7 +355,7 @@ class RedisStorage(MemoryStorage[MemoryEntry]):
             ttl: Optional TTL in seconds
         """
         try:
-            import redis
+            import redis  # type: ignore[import-not-found]
         except ImportError as err:
             raise ImportError("Redis storage requires 'redis' package: pip install redis") from err
 
@@ -420,7 +423,7 @@ class RedisStorage(MemoryStorage[MemoryEntry]):
         pipe.delete(key)
         pipe.lrem(self._list_key, 0, entry_id)
         results = pipe.execute()
-        return results[0] > 0
+        return bool(results[0] > 0)
 
     def clear(self) -> None:
         """Clear all entries."""
@@ -434,7 +437,7 @@ class RedisStorage(MemoryStorage[MemoryEntry]):
 
     def count(self) -> int:
         """Get the number of stored entries."""
-        return self._redis.llen(self._list_key)
+        return int(self._redis.llen(self._list_key))
 
     def search(self, query: str, limit: int = 10) -> list[MemoryEntry]:
         """Search for entries (basic implementation)."""
@@ -470,15 +473,19 @@ class VectorStorage(MemoryStorage[MemoryEntry]):
             embedding_model: Name of the sentence-transformers model
         """
         try:
-            import chromadb
-            from sentence_transformers import SentenceTransformer
+            import chromadb  # type: ignore[import-not-found]
+            from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
         except ImportError as err:
             raise ImportError(
                 "Vector storage requires 'chromadb' and 'sentence-transformers' packages: "
                 "pip install chromadb sentence-transformers"
             ) from err
 
-        self._client = chromadb.PersistentClient(path=persist_directory) if persist_directory else chromadb.EphemeralClient()
+        self._client = (
+            chromadb.PersistentClient(path=persist_directory)
+            if persist_directory
+            else chromadb.EphemeralClient()
+        )
         self._model = SentenceTransformer(embedding_model)
         self._collection = self._client.get_or_create_collection(name=collection_name)
 
@@ -490,7 +497,9 @@ class VectorStorage(MemoryStorage[MemoryEntry]):
             ids=[entry.id],
             embeddings=[embedding],
             documents=[entry.content],
-            metadatas=[{**entry.metadata, "role": entry.role, "timestamp": entry.timestamp.isoformat()}],
+            metadatas=[
+                {**entry.metadata, "role": entry.role, "timestamp": entry.timestamp.isoformat()}
+            ],
         )
         return entry.id
 
@@ -501,13 +510,15 @@ class VectorStorage(MemoryStorage[MemoryEntry]):
 
         for i in range(len(results["ids"])):
             metadata = results["metadatas"][i]
-            entries.append(MemoryEntry(
-                id=results["ids"][i],
-                role=metadata.get("role", "user"),
-                content=results["documents"][i],
-                timestamp=datetime.fromisoformat(metadata["timestamp"]),
-                metadata={k: v for k, v in metadata.items() if k not in ("role", "timestamp")},
-            ))
+            entries.append(
+                MemoryEntry(
+                    id=results["ids"][i],
+                    role=metadata.get("role", "user"),
+                    content=results["documents"][i],
+                    timestamp=datetime.fromisoformat(metadata["timestamp"]),
+                    metadata={k: v for k, v in metadata.items() if k not in ("role", "timestamp")},
+                )
+            )
 
         # Sort by timestamp
         entries.sort(key=lambda x: x.timestamp)
@@ -542,7 +553,7 @@ class VectorStorage(MemoryStorage[MemoryEntry]):
 
     def count(self) -> int:
         """Get the number of stored entries."""
-        return self._collection.count()
+        return int(self._collection.count())
 
     def search(self, query: str, limit: int = 10) -> list[MemoryEntry]:
         """Search for entries by semantic similarity."""
@@ -555,13 +566,15 @@ class VectorStorage(MemoryStorage[MemoryEntry]):
         entries = []
         for i in range(len(results["ids"][0])):
             metadata = results["metadatas"][0][i]
-            entries.append(MemoryEntry(
-                id=results["ids"][0][i],
-                role=metadata.get("role", "user"),
-                content=results["documents"][0][i],
-                timestamp=datetime.fromisoformat(metadata["timestamp"]),
-                metadata={k: v for k, v in metadata.items() if k not in ("role", "timestamp")},
-            ))
+            entries.append(
+                MemoryEntry(
+                    id=results["ids"][0][i],
+                    role=metadata.get("role", "user"),
+                    content=results["documents"][0][i],
+                    timestamp=datetime.fromisoformat(metadata["timestamp"]),
+                    metadata={k: v for k, v in metadata.items() if k not in ("role", "timestamp")},
+                )
+            )
         return entries
 
 
@@ -588,13 +601,14 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
         self.db_path = db_path
         self._init_db()
 
-    def _get_connection(self):
+    def _get_connection(self) -> Any:
         import sqlite3
+
         return sqlite3.connect(self.db_path)
 
-    def _init_db(self):
+    def _init_db(self) -> None:
         with self._get_connection() as conn:
-            conn.execute('''
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS memory_entries (
                     id TEXT PRIMARY KEY,
                     role TEXT,
@@ -602,21 +616,24 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
                     timestamp TEXT,
                     metadata TEXT
                 )
-            ''')
+            """)
             conn.commit()
 
     def save(self, entry: MemoryEntry) -> str:
         with self._get_connection() as conn:
-            conn.execute('''
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO memory_entries (id, role, content, timestamp, metadata)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (
-                entry.id,
-                entry.role,
-                entry.content,
-                entry.timestamp.isoformat(),
-                json.dumps(entry.metadata)
-            ))
+            """,
+                (
+                    entry.id,
+                    entry.role,
+                    entry.content,
+                    entry.timestamp.isoformat(),
+                    json.dumps(entry.metadata),
+                ),
+            )
             conn.commit()
         return entry.id
 
@@ -630,18 +647,23 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
         with self._get_connection() as conn:
             cursor = conn.execute(query)
             for row in cursor:
-                entries.append(MemoryEntry(
-                    id=row[0],
-                    role=row[1],
-                    content=row[2],
-                    timestamp=datetime.fromisoformat(row[3]),
-                    metadata=json.loads(row[4])
-                ))
+                entries.append(
+                    MemoryEntry(
+                        id=row[0],
+                        role=row[1],
+                        content=row[2],
+                        timestamp=datetime.fromisoformat(row[3]),
+                        metadata=json.loads(row[4]),
+                    )
+                )
         return entries
 
     def get(self, entry_id: str) -> MemoryEntry | None:
         with self._get_connection() as conn:
-            cursor = conn.execute("SELECT id, role, content, timestamp, metadata FROM memory_entries WHERE id = ?", (entry_id,))
+            cursor = conn.execute(
+                "SELECT id, role, content, timestamp, metadata FROM memory_entries WHERE id = ?",
+                (entry_id,),
+            )
             row = cursor.fetchone()
             if row:
                 return MemoryEntry(
@@ -649,7 +671,7 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
                     role=row[1],
                     content=row[2],
                     timestamp=datetime.fromisoformat(row[3]),
-                    metadata=json.loads(row[4])
+                    metadata=json.loads(row[4]),
                 )
         return None
 
@@ -657,7 +679,7 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
         with self._get_connection() as conn:
             cursor = conn.execute("DELETE FROM memory_entries WHERE id = ?", (entry_id,))
             conn.commit()
-            return cursor.rowcount > 0
+            return bool(cursor.rowcount > 0)
 
     def clear(self) -> None:
         with self._get_connection() as conn:
@@ -667,7 +689,7 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
     def count(self) -> int:
         with self._get_connection() as conn:
             cursor = conn.execute("SELECT COUNT(*) FROM memory_entries")
-            return cursor.fetchone()[0]
+            return int(cursor.fetchone()[0])
 
     def search(self, query: str, limit: int = 10) -> list[MemoryEntry]:
         query_lower = f"%{query.lower()}%"
@@ -676,13 +698,15 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
         with self._get_connection() as conn:
             cursor = conn.execute(sql, (query_lower, limit))
             for row in reversed(cursor.fetchall()):
-                entries.append(MemoryEntry(
-                    id=row[0],
-                    role=row[1],
-                    content=row[2],
-                    timestamp=datetime.fromisoformat(row[3]),
-                    metadata=json.loads(row[4])
-                ))
+                entries.append(
+                    MemoryEntry(
+                        id=row[0],
+                        role=row[1],
+                        content=row[2],
+                        timestamp=datetime.fromisoformat(row[3]),
+                        metadata=json.loads(row[4]),
+                    )
+                )
         return entries
 
 
@@ -702,7 +726,7 @@ class Memory:
 
     def __init__(
         self,
-        storage: MemoryStorage | None = None,
+        storage: MemoryStorage[Any] | None = None,
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         max_messages: int | None = None,
@@ -724,7 +748,9 @@ class Memory:
         self.max_messages = max_messages
         self.auto_summary = auto_summary
 
-    async def asummarize(self, provider_complete: Callable[[list[Message]], Message], keep_recent: int = 2) -> bool:
+    async def asummarize(
+        self, provider_complete: Callable[..., Awaitable[Any]], keep_recent: int = 2
+    ) -> bool:
         """
         Summarize older messages asynchronously using a provider to save context.
 
@@ -746,10 +772,10 @@ class Memory:
         for m in to_summarize:
             prompt += f"{m.role}: {m.content}\n"
 
-        summary_msg = await provider_complete([Message.user(prompt)])
+        summary_response = await provider_complete(messages=[Message.user(prompt)])
 
         self.clear()
-        self.add_system_message(f"Summary of prior conversation: {summary_msg.content}")
+        self.add_system_message(f"Summary of prior conversation: {summary_response.content}")
         for m in recent:
             self.add_message(m)
 

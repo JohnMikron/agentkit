@@ -5,18 +5,18 @@ Provides an AgentHook that automatically traces agent execution, LLM requests,
 and tool calls, sending them to an OpenTelemetry collector (e.g. Jaeger, Zipkin, Datadog).
 """
 
-
 from typing import TYPE_CHECKING
 
 from agentkit.core.agent import Agent
 from agentkit.core.types import Event
 
 if TYPE_CHECKING:
-    from opentelemetry.trace import Span, Tracer
+    from opentelemetry.trace import Span, Tracer  # type: ignore[import-not-found]
 
 try:
-    from opentelemetry import trace
-    from opentelemetry.trace.status import Status, StatusCode
+    from opentelemetry import trace  # type: ignore[import-not-found]
+    from opentelemetry.trace.status import Status, StatusCode  # type: ignore[import-not-found]
+
     HAS_OTEL = True
 except ImportError:
     HAS_OTEL = False

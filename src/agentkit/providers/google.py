@@ -58,7 +58,9 @@ class GoogleProvider(LLMProvider):
     ) -> None:
         super().__init__(model, api_key, None, temperature, max_tokens, **kwargs)
 
-        self.api_key = api_key or os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        self.api_key = (
+            api_key or os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        )
         self.timeout = timeout
 
         if not self.api_key:
@@ -77,35 +79,43 @@ class GoogleProvider(LLMProvider):
             if msg.role == Role.SYSTEM:
                 system_instruction = {"parts": [{"text": msg.content}]}
             elif msg.role == Role.USER:
-                contents.append({
-                    "role": "user",
-                    "parts": [{"text": msg.content}],
-                })
+                contents.append(
+                    {
+                        "role": "user",
+                        "parts": [{"text": msg.content}],
+                    }
+                )
             elif msg.role == Role.ASSISTANT:
-                parts = [{"text": msg.content}] if msg.content else []
+                parts: list[dict[str, Any]] = [{"text": msg.content}] if msg.content else []
                 if msg.tool_calls:
                     for tc in msg.tool_calls:
                         try:
                             args = json.loads(tc.arguments)
                         except json.JSONDecodeError:
                             args = {}
-                        parts.append({
-                            "functionCall": {
-                                "name": tc.name,
-                                "args": args,
+                        parts.append(
+                            {
+                                "functionCall": {
+                                    "name": tc.name,
+                                    "args": args,
+                                }
                             }
-                        })
+                        )
                 contents.append({"role": "model", "parts": parts})
             elif msg.role == Role.TOOL:
-                contents.append({
-                    "role": "function",
-                    "parts": [{
-                        "functionResponse": {
-                            "name": msg.name,
-                            "response": {"result": msg.content},
-                        }
-                    }],
-                })
+                contents.append(
+                    {
+                        "role": "function",
+                        "parts": [
+                            {
+                                "functionResponse": {
+                                    "name": msg.name,
+                                    "response": {"result": msg.content},
+                                }
+                            }
+                        ],
+                    }
+                )
 
         result: dict[str, Any] = {"contents": contents}
         if system_instruction:
@@ -171,11 +181,13 @@ class GoogleProvider(LLMProvider):
                 if tool_calls is None:
                     tool_calls = []
                 fc = part["functionCall"]
-                tool_calls.append(ToolCall(
-                    id=f"call_{fc.get('name', '')}_{hash(str(fc.get('args', {})))}",
-                    name=fc.get("name", ""),
-                    arguments=json.dumps(fc.get("args", {})),
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=f"call_{fc.get('name', '')}_{hash(str(fc.get('args', {})))}",
+                        name=fc.get("name", ""),
+                        arguments=json.dumps(fc.get("args", {})),
+                    )
+                )
 
         usage_data = response_data.get("usageMetadata", {})
         usage = self._create_usage(
@@ -191,8 +203,7 @@ class GoogleProvider(LLMProvider):
             "FUNCTION_CALL": FinishReason.TOOL_CALLS,
         }
         finish_reason = finish_reason_map.get(
-            candidate.get("finishReason", "STOP"),
-            FinishReason.STOP
+            candidate.get("finishReason", "STOP"), FinishReason.STOP
         )
 
         return LLMResponse(

@@ -63,7 +63,7 @@ class Step:
     prompt_template: str = "{{ input }}"
     timeout: float | None = None
     retry_count: int = 0
-    on_enter: Callable[[dict[str, Any]], None] | None = None
+    on_enter: Callable[[SharedState], None] | None = None
     on_exit: Callable[[AgentResult], None] | None = None
 
     # Runtime state
@@ -77,12 +77,13 @@ class ParallelStep(Step):
     """
     A workflow step that executes multiple agents concurrently.
     """
+
     agents: dict[str, Agent] = field(default_factory=dict)
     prompt_templates: dict[str, str] = field(default_factory=dict)
     results: dict[str, AgentResult] = field(default_factory=dict)
 
     # Dummy initializers since Step fields must be populated
-    agent: Agent | None = None
+    agent: Any = None
     prompt_template: str = ""
 
 
@@ -102,6 +103,7 @@ class Transition:
     to_step: str
     type: TransitionType = TransitionType.ALWAYS
     condition: Callable[[AgentResult], bool] | None = None
+
 
 class WorkflowState(BaseModel):
     """State of a workflow execution."""
@@ -198,8 +200,8 @@ class Workflow:
         prompt_templates: dict[str, str],
         timeout: float | None = None,
         retry_count: int = 0,
-        on_enter: Callable | None = None,
-        on_exit: Callable | None = None,
+        on_enter: Callable[..., Any] | None = None,
+        on_exit: Callable[..., Any] | None = None,
     ) -> Workflow:
         """
         Add a parallel execution step to the workflow.
@@ -242,12 +244,14 @@ class Workflow:
         if from_step not in self._transitions:
             self._transitions[from_step] = []
 
-        self._transitions[from_step].append(Transition(
-            from_step=from_step,
-            to_step=to_step,
-            type=type,
-            condition=condition,
-        ))
+        self._transitions[from_step].append(
+            Transition(
+                from_step=from_step,
+                to_step=to_step,
+                type=type,
+                condition=condition,
+            )
+        )
 
         return self
 
@@ -280,7 +284,11 @@ class Workflow:
             elif (
                 (transition.type == TransitionType.ON_SUCCESS and not result.success)
                 or (transition.type == TransitionType.ON_FAILURE and result.success)
-                or (transition.type == TransitionType.CONDITIONAL and transition.condition and not transition.condition(result))
+                or (
+                    transition.type == TransitionType.CONDITIONAL
+                    and transition.condition
+                    and not transition.condition(result)
+                )
             ):
                 continue
 
@@ -381,12 +389,14 @@ class Workflow:
                                         tasks.append(agent_obj.arun(agent_prompt))
 
                                     # Run conceptually in parallel
-                                    raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+                                    raw_results = await asyncio.gather(
+                                        *tasks, return_exceptions=True
+                                    )
 
                                     has_failure = False
                                     combined_content = {}
                                     for key, r in zip(keys, raw_results, strict=False):
-                                        if isinstance(r, Exception):
+                                        if isinstance(r, BaseException):
                                             has_failure = True
                                             combined_content[key] = f"ERROR: {r!s}"
                                         elif not r.success:
@@ -397,11 +407,16 @@ class Workflow:
                                             step.results[key] = r
 
                                     import json
+
                                     result = AgentResult(
                                         success=not has_failure,
                                         content=json.dumps(combined_content),
-                                        state=AgentState.COMPLETED if not has_failure else AgentState.FAILED,
-                                        error="One or more parallel agents failed" if has_failure else None
+                                        state=AgentState.COMPLETED
+                                        if not has_failure
+                                        else AgentState.FAILED,
+                                        error="One or more parallel agents failed"
+                                        if has_failure
+                                        else None,
                                     )
 
                                     if has_failure:
@@ -411,9 +426,15 @@ class Workflow:
                                     # Execute single step
                                     result = await step.agent.arun(prompt)
                                     if not result.success:
-                                        raise Exception(str(result.error) if hasattr(result, "error") else "Agent execution reported failure")
+                                        raise Exception(
+                                            str(result.error)
+                                            if hasattr(result, "error")
+                                            else "Agent execution reported failure"
+                                        )
                             except Exception as e:
-                                errors.append(f"Step '{step_name}' attempt {step.attempts} failed: {e}")
+                                errors.append(
+                                    f"Step '{step_name}' attempt {step.attempts} failed: {e}"
+                                )
                                 raise
                 except Exception:
                     step.status = StepStatus.FAILED
@@ -421,9 +442,12 @@ class Workflow:
                         success=False,
                         content="",
                         state=AgentState.FAILED,
-                        error="All attempts failed"
+                        error="All attempts failed",
                     )
                     break
+
+                if result is None:
+                    raise Exception("Agent execution returned None result")
 
                 step.result = result
                 step.status = StepStatus.COMPLETED if result.success else StepStatus.FAILED

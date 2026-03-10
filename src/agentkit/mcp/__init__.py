@@ -29,8 +29,9 @@ __all__ = [
     "PromptCallback",
     "ResourceCallback",
     "ToolCallback",
-    "load_mcp_tools"
+    "load_mcp_tools",
 ]
+
 
 class MCPToolDefinition(BaseModel):
     """MCP tool definition."""
@@ -90,14 +91,14 @@ class MCPServer:
         self._tools: dict[str, MCPToolDefinition] = {}
         self._resources: dict[str, MCPResource] = {}
         self._prompts: dict[str, MCPPrompt] = {}
-        self._tool_handlers: dict[str, Callable] = {}
+        self._tool_handlers: dict[str, Callable[..., Any]] = {}
 
     def add_tool(
         self,
         name: str,
         description: str,
         input_schema: dict[str, Any],
-        handler: Callable,
+        handler: Callable[..., Any],
     ) -> MCPServer:
         """Add a tool to the server."""
         self._tools[name] = MCPToolDefinition(
@@ -145,7 +146,7 @@ class MCPServer:
         self._prompt_templates[name] = template
         return self
 
-    def expose_agent_tools(self, agent) -> MCPServer:
+    def expose_agent_tools(self, agent: Any) -> MCPServer:
         """
         Expose all tools from an Agent as MCP tools.
 
@@ -164,7 +165,9 @@ class MCPServer:
             )
         return self
 
-    def expose_agent_memory(self, agent, resource_uri: str = "memory://conversation") -> MCPServer:
+    def expose_agent_memory(
+        self, agent: Any, resource_uri: str = "memory://conversation"
+    ) -> MCPServer:
         """
         Expose agent memory as an MCP resource.
 
@@ -380,7 +383,7 @@ class MCPServer:
 
                 request = json.loads(line.decode().strip())
                 response = await self.handle_request(request)
-                writer.write((json.dumps(response) + "\n").encode())
+                writer.write(json.dumps(response) + "\n")
                 writer.flush()
 
             except json.JSONDecodeError:
@@ -394,7 +397,7 @@ class MCPServer:
                         "message": f"Parse error: {e!s}",
                     },
                 }
-                writer.write((json.dumps(error_response) + "\n").encode())
+                writer.write(json.dumps(error_response) + "\n")
                 writer.flush()
 
 
@@ -417,7 +420,7 @@ class MCPClient:
 
     def __init__(self) -> None:
         self._tools: dict[str, MCPToolDefinition] = {}
-        self._process = None
+        self._process: asyncio.subprocess.Process | None = None
 
     async def connect(self, command: str, args: list[str] | None = None) -> None:
         """
@@ -436,27 +439,31 @@ class MCPClient:
         )
 
         # Initialize connection
-        await self._send_request({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {
-                    "name": "agentkit",
-                    "version": "1.0.0",
+        await self._send_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {
+                        "name": "agentkit",
+                        "version": "1.0.0",
+                    },
                 },
-            },
-        })
+            }
+        )
 
         # Get tools
-        tools_response = await self._send_request({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/list",
-            "params": {},
-        })
+        tools_response = await self._send_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list",
+                "params": {},
+            }
+        )
 
         for tool_data in tools_response.get("result", {}).get("tools", []):
             tool = MCPToolDefinition(**tool_data)
@@ -474,7 +481,9 @@ class MCPClient:
             raise RuntimeError("No stdout from MCP server")
 
         response_line = await self._process.stdout.readline()
-        return json.loads(response_line.decode())
+        from typing import cast
+
+        return cast("dict[str, Any]", json.loads(response_line.decode()))
 
     async def list_tools(self) -> list[MCPToolDefinition]:
         """Get list of available tools."""
@@ -485,15 +494,17 @@ class MCPClient:
         if name not in self._tools:
             raise ValueError(f"Tool not found: {name}")
 
-        response = await self._send_request({
-            "jsonrpc": "2.0",
-            "id": hash(name) % 10000,  # Simple ID generation
-            "method": "tools/call",
-            "params": {
-                "name": name,
-                "arguments": arguments,
-            },
-        })
+        response = await self._send_request(
+            {
+                "jsonrpc": "2.0",
+                "id": hash(name) % 10000,  # Simple ID generation
+                "method": "tools/call",
+                "params": {
+                    "name": name,
+                    "arguments": arguments,
+                },
+            }
+        )
 
         if "error" in response:
             raise RuntimeError(response["error"].get("message", "Unknown error"))
@@ -533,9 +544,10 @@ async def load_mcp_tools(command: str, args: list[str] | None = None) -> list[To
 
     for mcp_tool in mcp_tools:
         # We need to capture the current tool context correctly in the lambda
-        def make_handler(tool_name: str):
-            async def handler(**kwargs) -> str:
+        def make_handler(tool_name: str) -> Callable[..., Any]:
+            async def handler(**kwargs: Any) -> str:
                 return await client.call_tool(tool_name, kwargs)
+
             return handler
 
         native_tools.append(

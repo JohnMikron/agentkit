@@ -12,8 +12,9 @@ from agentkit.core.agent import Agent
 from agentkit.core.tools import tool
 
 try:
-    import requests
-    from bs4 import BeautifulSoup
+    import requests  # type: ignore[import-untyped]
+    from bs4 import BeautifulSoup  # type: ignore[import-not-found]
+
     HAS_WEB_DEPS = True
 except ImportError:
     HAS_WEB_DEPS = False
@@ -58,8 +59,8 @@ class WebAgent(Agent):
         )
 
         # Register built-in web tools
-        self.add_tool(self.search_web)
-        self.add_tool(self.scrape_url)
+        self.add_tool(self.search_web)  # type: ignore
+        self.add_tool(self.scrape_url)  # type: ignore
 
     @tool
     def search_web(self, query: str, limit: int = 5) -> str:
@@ -76,7 +77,9 @@ class WebAgent(Agent):
         try:
             # Basic DuckDuckGo search implementation using requests
             url = f"https://duckduckgo.com/html/?q={query}"
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
             response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
 
@@ -86,7 +89,9 @@ class WebAgent(Agent):
                 title = result.find("a", class_="result__a")
                 snippet = result.find("a", class_="result__snippet")
                 if title and snippet:
-                    results.append(f"Title: {title.text.strip()}\nURL: {title['href']}\nSnippet: {snippet.text.strip()}\n")
+                    results.append(
+                        f"Title: {title.text.strip()}\nURL: {title['href']}\nSnippet: {snippet.text.strip()}\n"
+                    )
 
             if not results:
                 return "No results found."
@@ -107,7 +112,9 @@ class WebAgent(Agent):
             return "Error: Web dependencies (requests) not installed. pip install requests beautifulsoup4"
 
         try:
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
             response = requests.get(url, headers=headers, timeout=15)
             response.raise_for_status()
 
@@ -123,6 +130,6 @@ class WebAgent(Agent):
             if len(text) > 10000:
                 text = text[:10000] + "\n... (content truncated)"
 
-            return text
+            return str(text)
         except Exception as e:
             return f"Error scraping URL: {e!s}"

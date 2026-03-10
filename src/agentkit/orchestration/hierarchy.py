@@ -14,6 +14,7 @@ from agentkit.core.types import Message
 
 class TaskStatus(str, Enum):
     """Status of a managed task."""
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -22,14 +23,18 @@ class TaskStatus(str, Enum):
 
 class DelegatedTask(BaseModel):
     """A task delegated to a worker."""
+
     worker_name: str
     instructions: str
 
 
 class SupervisorResponse(BaseModel):
     """The structured response the supervisor returns deciding what to do next."""
+
     thoughts: str = Field(description="Reasoning about the current state and what to do next.")
-    delegations: list[DelegatedTask] = Field(description="List of tasks to delegate to workers. Should be empty if finishing.")
+    delegations: list[DelegatedTask] = Field(
+        description="List of tasks to delegate to workers. Should be empty if finishing."
+    )
     is_finished: bool = Field(description="Set to true if all work is complete.")
     final_answer: str = Field(description="The final aggregated response if is_finished is true.")
 
@@ -67,7 +72,10 @@ class HierarchicalTeam:
 
     def _build_supervisor_prompt(self, objective: str) -> str:
         worker_profiles = "\n".join(
-            [f"- **{name}**: {worker.config.system_prompt[:100]}..." for name, worker in self.workers.items()]
+            [
+                f"- **{name}**: {(worker.config.system_prompt or '')[:100]}..."
+                for name, worker in self.workers.items()
+            ]
         )
         return f"""You are the Supervisor of a specialized team of AI Agents.
 
@@ -103,10 +111,9 @@ If the overarching objective has been fully achieved, synthesize the final answe
 
             # Supervisor decides what to do
             plan_result = await self.supervisor.arun_structured(
-                prompt=full_prompt,
-                response_model=SupervisorResponse
+                prompt=full_prompt, response_model=SupervisorResponse
             )
-            plan: SupervisorResponse = plan_result.data # type: ignore
+            plan: SupervisorResponse = plan_result.data  # type: ignore
 
             if plan.is_finished:
                 return plan.final_answer
@@ -123,8 +130,13 @@ If the overarching objective has been fully achieved, synthesize the final answe
                     worker_res = f"Cannot delegate to {task.worker_name}: Worker not found."
                 else:
                     worker = self.workers[task.worker_name]
-                    worker_res = await worker.arun(task.instructions)
+                    result_obj = await worker.arun(task.instructions)
+                    worker_res = result_obj.content
 
-                self.history.append(Message.user(f"Worker {task.worker_name} reported:\n{worker_res}"))
+                self.history.append(
+                    Message.user(f"Worker {task.worker_name} reported:\n{worker_res}")
+                )
 
-        raise Exception(f"HierarchicalTeam reached max iterations ({self.max_iterations}) without finishing.")
+        raise Exception(
+            f"HierarchicalTeam reached max iterations ({self.max_iterations}) without finishing."
+        )

@@ -59,7 +59,7 @@ class Route:
     condition: Callable[[str], bool] | None = None
 
     # Compiled patterns
-    _compiled_patterns: list[re.Pattern] = field(default_factory=list, repr=False)
+    _compiled_patterns: list[re.Pattern[Any]] = field(default_factory=list, repr=False)
 
     def __post_init__(self) -> None:
         """Compile regex patterns."""
@@ -189,7 +189,7 @@ class Router:
 
         route_names = list(self._routes.keys())
 
-        prompt = f"""Classify this request into one of these categories: {', '.join(route_names)}
+        prompt = f"""Classify this request into one of these categories: {", ".join(route_names)}
 
 Request: {input}
 
@@ -271,7 +271,7 @@ Respond with ONLY the category name, nothing else."""
         completed = await asyncio.gather(*tasks, return_exceptions=True)
 
         for item in completed:
-            if isinstance(item, Exception):
+            if isinstance(item, BaseException):
                 errors.append(str(item))
             else:
                 name, result = item

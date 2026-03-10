@@ -158,7 +158,9 @@ class ToolCall(BaseModel):
         import json
 
         try:
-            return json.loads(self.arguments)
+            from typing import cast
+
+            return cast("dict[str, Any]", json.loads(self.arguments))
         except json.JSONDecodeError:
             return {}
 
@@ -183,7 +185,7 @@ class ToolDefinition(BaseModel):
 
     def to_api_format(self) -> dict[str, Any]:
         """Convert to OpenAI-compatible tool format."""
-        result = {
+        result: dict[str, Any] = {
             "type": "function",
             "function": {
                 "name": self.name,

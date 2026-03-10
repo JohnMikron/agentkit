@@ -83,8 +83,10 @@ class MissingAPIKeyError(ConfigurationError):
 class InvalidModelError(ConfigurationError):
     """Raised when an invalid model is specified."""
 
-    def __init__(self, model: str, provider: str, available_models: list[str] | None = None) -> None:
-        details = {"model": model, "provider": provider}
+    def __init__(
+        self, model: str, provider: str, available_models: list[str] | None = None
+    ) -> None:
+        details: dict[str, Any] = {"model": model, "provider": provider}
         if available_models:
             details["available_models"] = available_models
         super().__init__(
@@ -140,7 +142,7 @@ class ProviderRateLimitError(ProviderError):
         retry_after: int | None = None,
         limit_type: str | None = None,
     ) -> None:
-        details = {}
+        details: dict[str, Any] = {}
         if retry_after:
             details["retry_after_seconds"] = retry_after
         if limit_type:
@@ -168,8 +170,10 @@ class ProviderAuthenticationError(ProviderError):
 class ProviderModelNotSupportedError(ProviderError):
     """Raised when the requested model is not supported."""
 
-    def __init__(self, provider: str, model: str, available_models: list[str] | None = None) -> None:
-        details = {"requested_model": model}
+    def __init__(
+        self, provider: str, model: str, available_models: list[str] | None = None
+    ) -> None:
+        details: dict[str, Any] = {"requested_model": model}
         if available_models:
             details["available_models"] = available_models
         super().__init__(
@@ -242,7 +246,7 @@ class ToolExecutionError(ToolError):
         original_error: Exception | None = None,
         arguments: dict[str, Any] | None = None,
     ) -> None:
-        details = {}
+        details: dict[str, Any] = {}
         if original_error:
             details["original_error"] = str(original_error)
         if arguments:

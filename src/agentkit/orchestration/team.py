@@ -262,7 +262,7 @@ class Team:
         # Run in parallel with semaphore
         semaphore = asyncio.Semaphore(self.config.max_parallel)
 
-        async def bounded_run(cfg: AgentConfig):
+        async def bounded_run(cfg: AgentConfig) -> tuple[str, AgentResult]:
             async with semaphore:
                 return await run_agent(cfg)
 
@@ -270,7 +270,7 @@ class Team:
         completed = await asyncio.gather(*tasks, return_exceptions=True)
 
         for item in completed:
-            if isinstance(item, Exception):
+            if isinstance(item, BaseException):
                 errors.append(str(item))
             else:
                 name, result = item
@@ -304,7 +304,7 @@ class Team:
 
 Task: {task}
 
-Available workers: {', '.join(a.name for a in self.get_agents(TeamRole.WORKER))}
+Available workers: {", ".join(a.name for a in self.get_agents(TeamRole.WORKER))}
 
 Create a JSON list of subtasks with assigned workers:
 {{"subtasks": [{{"worker": "name", "task": "description"}}]}}"""
@@ -353,7 +353,8 @@ Create a JSON list of subtasks with assigned workers:
 
         # Leader aggregates results
         worker_outputs = {
-            name: r.content for name, r in results.items()
+            name: r.content
+            for name, r in results.items()
             if r.success and name != self._leader.name
         }
 

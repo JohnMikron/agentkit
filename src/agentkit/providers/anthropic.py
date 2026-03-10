@@ -71,7 +71,7 @@ class AnthropicProvider(LLMProvider):
     def _headers(self) -> dict[str, str]:
         """Build request headers."""
         return {
-            "x-api-key": self.api_key,
+            "x-api-key": self.api_key or "",
             "anthropic-version": "2023-06-01",
             "Content-Type": "application/json",
         }
@@ -100,22 +100,28 @@ class AnthropicProvider(LLMProvider):
                             args = json.loads(tc.arguments)
                         except json.JSONDecodeError:
                             args = {}
-                        content_blocks.append({
-                            "type": "tool_use",
-                            "id": tc.id,
-                            "name": tc.name,
-                            "input": args,
-                        })
+                        content_blocks.append(
+                            {
+                                "type": "tool_use",
+                                "id": tc.id,
+                                "name": tc.name,
+                                "input": args,
+                            }
+                        )
                 converted.append({"role": "assistant", "content": content_blocks})
             elif msg.role == Role.TOOL:
-                converted.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": msg.tool_call_id,
-                        "content": msg.content,
-                    }],
-                })
+                converted.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": msg.tool_call_id,
+                                "content": msg.content,
+                            }
+                        ],
+                    }
+                )
 
         return system_prompt, converted
 
@@ -174,11 +180,13 @@ class AnthropicProvider(LLMProvider):
             elif block.get("type") == "tool_use":
                 if tool_calls is None:
                     tool_calls = []
-                tool_calls.append(ToolCall(
-                    id=block.get("id", ""),
-                    name=block.get("name", ""),
-                    arguments=json.dumps(block.get("input", {})),
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=block.get("id", ""),
+                        name=block.get("name", ""),
+                        arguments=json.dumps(block.get("input", {})),
+                    )
+                )
 
         usage_data = response_data.get("usage", {})
         usage = self._create_usage(
@@ -294,7 +302,9 @@ class AnthropicProvider(LLMProvider):
                 if line.startswith("data: "):
                     try:
                         data = json.loads(line[6:])
-                        if data.get("type") == "content_block_delta" and (text := data.get("delta", {}).get("text")):
+                        if data.get("type") == "content_block_delta" and (
+                            text := data.get("delta", {}).get("text")
+                        ):
                             yield text
                     except (json.JSONDecodeError, KeyError):
                         continue
@@ -322,7 +332,9 @@ class AnthropicProvider(LLMProvider):
                 if line.startswith("data: "):
                     try:
                         data = json.loads(line[6:])
-                        if data.get("type") == "content_block_delta" and (text := data.get("delta", {}).get("text")):
+                        if data.get("type") == "content_block_delta" and (
+                            text := data.get("delta", {}).get("text")
+                        ):
                             yield text
                     except (json.JSONDecodeError, KeyError):
                         continue

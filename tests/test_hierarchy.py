@@ -15,11 +15,12 @@ def mock_supervisor():
 
 @pytest.fixture
 def mock_workers():
+    from agentkit.core.types import AgentResult
     researcher = Agent("Researcher", system_prompt="I research things")
-    researcher.arun = AsyncMock(return_value="Research complete.")
+    researcher.arun = AsyncMock(return_value=AgentResult(content="Research complete.", success=True))
 
     writer = Agent("Writer", system_prompt="I write things")
-    writer.arun = AsyncMock(return_value="Writing complete.")
+    writer.arun = AsyncMock(return_value=AgentResult(content="Writing complete.", success=True))
 
     return [researcher, writer]
 

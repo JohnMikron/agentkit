@@ -35,6 +35,7 @@ class SwarmResult(BaseModel):
 
 class TransferTarget(BaseModel):
     """Signal to transfer control to another agent."""
+
     target_agent: str
     context: str = ""
 
@@ -139,7 +140,9 @@ class Swarm:
                 self.add_agent(current_agent)
         else:
             if starting_agent not in self._agents:
-                return SwarmResult(success=False, errors=[f"Starting agent {starting_agent} not found."])
+                return SwarmResult(
+                    success=False, errors=[f"Starting agent {starting_agent} not found."]
+                )
             current_agent = self._agents[starting_agent]
 
         messages: list[Message] = []
@@ -175,7 +178,9 @@ class Swarm:
                         if target_name in self._agents:
                             transfer_target = target_name
                             # The context is usually in the arguments or the result content
-                            current_input = f"Transferred from {current_agent.name}. Context: {tr.content}"
+                            current_input = (
+                                f"Transferred from {current_agent.name}. Context: {tr.content}"
+                            )
                             break
 
                 messages.extend(result.messages)
@@ -193,7 +198,7 @@ class Swarm:
                         agent_history=agent_history,
                         messages=messages,
                         latency_ms=(time.perf_counter() - start_time) * 1000,
-                        errors=errors
+                        errors=errors,
                     )
 
             except Exception as e:
@@ -204,7 +209,7 @@ class Swarm:
                     agent_history=agent_history,
                     messages=messages,
                     latency_ms=(time.perf_counter() - start_time) * 1000,
-                    errors=errors
+                    errors=errors,
                 )
 
         errors.append(f"Max hops ({self.max_hops}) exceeded.")
@@ -214,9 +219,11 @@ class Swarm:
             agent_history=agent_history,
             messages=messages,
             latency_ms=(time.perf_counter() - start_time) * 1000,
-            errors=errors
+            errors=errors,
         )
 
-    def run(self, starting_agent: str | Agent, task: str, context: dict[str, Any] | None = None) -> SwarmResult:
+    def run(
+        self, starting_agent: str | Agent, task: str, context: dict[str, Any] | None = None
+    ) -> SwarmResult:
         """Execute the swarm synchronously."""
         return asyncio.run(self.arun(starting_agent, task, context))

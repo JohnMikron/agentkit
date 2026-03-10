@@ -64,7 +64,9 @@ class LLMSettings(BaseSettings):
     # Retry settings
     max_retries: int = Field(default=3, ge=0, description="Maximum retry attempts")
     retry_delay: float = Field(default=1.0, ge=0.0, description="Base retry delay in seconds")
-    retry_multiplier: float = Field(default=2.0, ge=1.0, description="Exponential backoff multiplier")
+    retry_multiplier: float = Field(
+        default=2.0, ge=1.0, description="Exponential backoff multiplier"
+    )
 
     # Rate limiting
     requests_per_minute: int | None = Field(default=None, description="Rate limit for requests")
@@ -105,7 +107,9 @@ class AgentSettings(BaseSettings):
     # Tool settings
     tool_timeout: float = Field(default=30.0, ge=1.0, description="Tool execution timeout")
     validate_tool_args: bool = Field(default=True, description="Validate tool arguments")
-    strict_tool_validation: bool = Field(default=False, description="Use strict JSON Schema validation")
+    strict_tool_validation: bool = Field(
+        default=False, description="Use strict JSON Schema validation"
+    )
 
     # Memory settings
     memory_enabled: bool = Field(default=False, description="Enable conversation memory")
@@ -143,7 +147,9 @@ class CacheSettings(BaseSettings):
 
     # Semantic cache
     semantic_cache_enabled: bool = Field(default=False, description="Enable semantic caching")
-    similarity_threshold: float = Field(default=0.95, ge=0.0, le=1.0, description="Similarity threshold")
+    similarity_threshold: float = Field(
+        default=0.95, ge=0.0, le=1.0, description="Similarity threshold"
+    )
 
 
 class ObservabilitySettings(BaseSettings):
@@ -166,7 +172,9 @@ class ObservabilitySettings(BaseSettings):
 
     # Tracing
     tracing_enabled: bool = Field(default=False, description="Enable distributed tracing")
-    tracing_exporter: str = Field(default="otlp", description="Trace exporter (otlp, jaeger, zipkin)")
+    tracing_exporter: str = Field(
+        default="otlp", description="Trace exporter (otlp, jaeger, zipkin)"
+    )
     tracing_endpoint: str | None = Field(default=None, description="Trace endpoint URL")
 
     # Metrics
@@ -255,6 +263,7 @@ class Settings(BaseSettings):
         """Load settings from a file."""
         import json
         from pathlib import Path
+
         with Path(path).open() as f:
             data = json.load(f)
         return cls(**data)

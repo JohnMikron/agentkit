@@ -12,7 +12,7 @@ import hashlib
 import json
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -63,14 +63,16 @@ class InMemoryCache(Cache[T]):
             max_size: Maximum number of entries
             default_ttl: Default TTL in seconds
         """
-        from cachetools import TTLCache
+        from cachetools import TTLCache  # type: ignore[import-untyped]
 
         self._cache: TTLCache = TTLCache(maxsize=max_size, ttl=default_ttl)
         self.default_ttl = default_ttl
 
     def get(self, key: str) -> T | None:
         """Get a value from cache."""
-        return self._cache.get(key)
+        from typing import cast
+
+        return cast("T | None", self._cache.get(key))
 
     def set(self, key: str, value: T, ttl: int | None = None) -> None:
         """Set a value in cache."""
@@ -118,7 +120,7 @@ class RedisCache(Cache[T]):
             default_ttl: Default TTL in seconds
         """
         try:
-            import redis
+            import redis  # type: ignore[import-not-found]
         except ImportError as err:
             raise ImportError("Redis cache requires 'redis' package: pip install redis") from err
 
@@ -136,9 +138,13 @@ class RedisCache(Cache[T]):
         data = self._redis.get(redis_key)
         if data:
             try:
-                return json.loads(data)
+                from typing import cast
+
+                return cast("T | None", json.loads(data))
             except json.JSONDecodeError:
-                return data
+                from typing import cast
+
+                return cast("T | None", data)
         return None
 
     def set(self, key: str, value: T, ttl: int | None = None) -> None:
@@ -188,9 +194,9 @@ class SemanticCache(Cache[str]):
         self.default_ttl = default_ttl
 
         from agentkit.core.memory import VectorStorage
+
         self._storage = VectorStorage(
-            collection_name=collection_name,
-            persist_directory=persist_directory
+            collection_name=collection_name, persist_directory=persist_directory
         )
 
     def get(self, key: str) -> str | None:
@@ -212,15 +218,11 @@ class SemanticCache(Cache[str]):
     def set(self, key: str, value: str, ttl: int | None = None) -> None:
         """Cache a response with its embedding."""
         from agentkit.core.memory import MemoryEntry
+
         expiry = time.time() + (ttl or self.default_ttl)
 
         entry = MemoryEntry(
-            role="system",
-            content=value,
-            metadata={
-                "original_prompt": key,
-                "expiry": expiry
-            }
+            role="system", content=value, metadata={"original_prompt": key, "expiry": expiry}
         )
         # VectorStorage automatically embeds the 'content'. Wait.
         # We want to search by the PROMPT, not the RESPONSE.
@@ -228,11 +230,8 @@ class SemanticCache(Cache[str]):
         # Let's override how we use it:
         entry = MemoryEntry(
             role="system",
-            content=key, # The prompt to be embedded and searched
-            metadata={
-                "response": value,
-                "expiry": expiry
-            }
+            content=key,  # The prompt to be embedded and searched
+            metadata={"response": value, "expiry": expiry},
         )
         self._storage.save(entry)
 
@@ -264,11 +263,15 @@ class SemanticCache(Cache[str]):
         return entry.metadata.get("response")
 
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
 def cached(
-    cache: Cache,
-    key_func: callable | None = None,
+    cache: Cache[Any],
+    key_func: Callable[..., str] | None = None,
     ttl: int | None = None,
-):
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator to cache function results.
 
@@ -282,9 +285,9 @@ def cached(
     """
     import functools
 
-    def decorator(func):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Generate cache key
             if key_func:
                 key = key_func(*args, **kwargs)

@@ -47,7 +47,9 @@ class MockProvider(LLMProvider):
         else:
             # Echo logic if no more responses
             last_msg = messages[-1].content if messages else ""
-            content = f"Mock response to: {last_msg[:50]}..." if last_msg else "Hello, I am a mock agent!"
+            content = (
+                f"Mock response to: {last_msg[:50]}..." if last_msg else "Hello, I am a mock agent!"
+            )
 
         return LLMResponse(
             id=f"mock-{time.time()}",
@@ -66,14 +68,18 @@ class MockProvider(LLMProvider):
         """Generate a mock completion asynchronously."""
         return self.complete(messages, tools, **kwargs)
 
-    def stream(self, messages: list[Message], **kwargs: Any) -> Iterator[str]:
+    def stream(
+        self, messages: list[Message], tools: Any | None = None, **kwargs: Any
+    ) -> Iterator[str]:
         """Stream mock response."""
         resp = self.complete(messages, **kwargs)
         for word in resp.content.split():
             yield word + " "
             time.sleep(0.05)
 
-    async def astream(self, messages: list[Message], **kwargs: Any) -> AsyncIterator[str]:
+    async def astream(
+        self, messages: list[Message], tools: Any | None = None, **kwargs: Any
+    ) -> AsyncIterator[str]:
         """Stream mock response asynchronously."""
         resp = await self.acomplete(messages, **kwargs)
         for word in resp.content.split():

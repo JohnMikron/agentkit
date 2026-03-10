@@ -254,7 +254,7 @@ class Agent:
         # Components
         self._tools = ToolRegistry()
         self._hooks = AgentHooks()
-        self._provider = None
+        self._provider: LLMProvider | None = None
         self._state = AgentState.IDLE
         self._cancelled = False
         self._approval_handler = approval_handler
@@ -262,13 +262,15 @@ class Agent:
         # Initialize memory
         if self.config.memory_enabled:
             if self.config.memory_file:
-                storage = FileStorage(
+                storage: Any = FileStorage(
                     self.config.memory_file,
                     max_entries=self.config.memory_max_entries,
                 )
             else:
                 storage = InMemoryStorage(max_entries=self.config.memory_max_entries)
-            self._memory = Memory(storage=storage, system_prompt=self.config.system_prompt)
+            self._memory: Memory | None = Memory(
+                storage=storage, system_prompt=self.config.system_prompt
+            )
         else:
             self._memory = None
 
@@ -351,22 +353,43 @@ class Agent:
         try:
             if provider_name == "openai":
                 from agentkit.providers.openai import OpenAIProvider
-                return OpenAIProvider(model=model_name, api_key=self.settings.llm.openai_api_key, **self._provider_kwargs())
+
+                return OpenAIProvider(
+                    model=model_name,
+                    api_key=self.settings.llm.openai_api_key,
+                    **self._provider_kwargs(),
+                )
 
             if provider_name in ("anthropic", "claude"):
                 from agentkit.providers.anthropic import AnthropicProvider
-                return AnthropicProvider(model=model_name, api_key=self.settings.llm.anthropic_api_key, **self._provider_kwargs())
+
+                return AnthropicProvider(
+                    model=model_name,
+                    api_key=self.settings.llm.anthropic_api_key,
+                    **self._provider_kwargs(),
+                )
 
             if provider_name in ("google", "gemini"):
                 from agentkit.providers.google import GoogleProvider
-                return GoogleProvider(model=model_name, api_key=self.settings.llm.google_api_key, **self._provider_kwargs())
+
+                return GoogleProvider(
+                    model=model_name,
+                    api_key=self.settings.llm.google_api_key,
+                    **self._provider_kwargs(),
+                )
 
             if provider_name == "mistral":
                 from agentkit.providers.mistral import MistralProvider
-                return MistralProvider(model=model_name, api_key=self.settings.llm.mistral_api_key, **self._provider_kwargs())
+
+                return MistralProvider(
+                    model=model_name,
+                    api_key=self.settings.llm.mistral_api_key,
+                    **self._provider_kwargs(),
+                )
 
             if provider_name in ("local", "ollama"):
                 from agentkit.providers.ollama import OllamaProvider
+
                 return OllamaProvider(model=model_name, **self._provider_kwargs())
 
             if provider_name == "mock":
@@ -552,7 +575,6 @@ class Agent:
 
         return messages
 
-
     async def _aexecute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
         """Execute tool calls asynchronously."""
         results = []
@@ -566,12 +588,14 @@ class Agent:
             )
 
             if self._approval_handler and not self._approval_handler(tc):
-                results.append(ToolResult(
-                    tool_call_id=tc.id,
-                    name=tc.name,
-                    content="Error: Human approval denied",
-                    is_error=True,
-                ))
+                results.append(
+                    ToolResult(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        content="Error: Human approval denied",
+                        is_error=True,
+                    )
+                )
                 await self._aemit(
                     EventType.TOOL_CALL_END,
                     {"tool_name": tc.name, "tool_call_id": tc.id, "is_error": True},
@@ -580,21 +604,25 @@ class Agent:
 
             try:
                 result = await self._tools.aexecute(tc.name, args)
-                results.append(ToolResult(
-                    tool_call_id=tc.id,
-                    name=tc.name,
-                    content=result.content,
-                    raw_result=result.raw_result,
-                    is_error=result.is_error,
-                    execution_time_ms=result.execution_time_ms,
-                ))
+                results.append(
+                    ToolResult(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        content=result.content,
+                        raw_result=result.raw_result,
+                        is_error=result.is_error,
+                        execution_time_ms=result.execution_time_ms,
+                    )
+                )
             except ToolError as e:
-                results.append(ToolResult(
-                    tool_call_id=tc.id,
-                    name=tc.name,
-                    content=f"Error: {e.message}",
-                    is_error=True,
-                ))
+                results.append(
+                    ToolResult(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        content=f"Error: {e.message}",
+                        is_error=True,
+                    )
+                )
 
             await self._aemit(
                 EventType.TOOL_CALL_END,
@@ -672,14 +700,19 @@ class Agent:
         schema = response_model.model_json_schema()
         structured_prompt = f"{prompt}\n\nYou MUST respond entirely in valid JSON format matching this schema:\n{json.dumps(schema, indent=2)}"
 
-        if self._memory and getattr(self._memory, "auto_summary", False) and getattr(self._memory, "max_messages", None) and len(self._memory) > self._memory.max_messages:
+        if (
+            self._memory
+            and getattr(self._memory, "auto_summary", False)
+            and self._memory.max_messages is not None
+            and len(self._memory) > self._memory.max_messages
+        ):
             await self._memory.asummarize(self.provider.acomplete)
 
         result = await self.arun(structured_prompt, tools=tools, **kwargs)
 
         # Robust JSON extraction using Regex
         content = result.content
-        match = re.search(r'(\{[\s\S]*\}|\[[\s\S]*\])', content)
+        match = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", content)
         if not match:
             raise AgentError(
                 f"Could not extract JSON from agent response.\nRaw Response: {content}"
@@ -692,7 +725,9 @@ class Agent:
             result.data = parsed
             return result
         except Exception as e:
-            raise AgentError(f"Failed to parse structured output: {e!s}\nExtracted JSON: {json_str}\nRaw Response: {content}") from e
+            raise AgentError(
+                f"Failed to parse structured output: {e!s}\nExtracted JSON: {json_str}\nRaw Response: {content}"
+            ) from e
 
     async def arun(
         self,
@@ -727,7 +762,12 @@ class Agent:
 
         try:
             # Auto-summarize memory if needed
-            if self._memory and getattr(self._memory, "auto_summary", False) and getattr(self._memory, "max_messages", None) and len(self._memory) > self._memory.max_messages:
+            if (
+                self._memory
+                and getattr(self._memory, "auto_summary", False)
+                and self._memory.max_messages is not None
+                and len(self._memory) > self._memory.max_messages
+            ):
                 await self._memory.asummarize(self.provider.acomplete)
 
             # Build initial messages
@@ -755,25 +795,30 @@ class Agent:
                     tools=tool_defs if tool_defs else None,
                     **kwargs,
                 )
-
-                # Track usage
                 total_usage = total_usage + response.usage
-
-                # Check maximum budget
-                if self.config.max_tokens_limit is not None and total_usage.total_tokens > self.config.max_tokens_limit:
-                    raise AgentError(f"Token limit exceeded: used {total_usage.total_tokens}, limit {self.config.max_tokens_limit}")
+                if (
+                    self.config.max_tokens_limit is not None
+                    and total_usage.total_tokens > self.config.max_tokens_limit
+                ):
+                    raise AgentError(
+                        f"Token limit exceeded: used {total_usage.total_tokens}, limit {self.config.max_tokens_limit}"
+                    )
 
                 if self.config.max_budget_usd is not None:
-                    cost = self._estimate_cost(total_usage, response.model)
+                    cost = self._estimate_cost(total_usage, response.model or "")
                     if cost > self.config.max_budget_usd:
-                        raise AgentError(f"Budget limit exceeded: spent ${cost:.4f}, limit ${self.config.max_budget_usd:.4f}")
+                        raise AgentError(
+                            f"Budget limit exceeded: spent ${cost:.4f}, limit ${self.config.max_budget_usd:.4f}"
+                        )
 
                 # Emit LLM response event
                 await self._aemit(
                     EventType.LLM_RESPONSE,
                     {
                         "has_tool_calls": response.has_tool_calls,
-                        "finish_reason": response.finish_reason.value if response.finish_reason else None,
+                        "finish_reason": response.finish_reason.value
+                        if response.finish_reason
+                        else None,
                     },
                 )
 
@@ -839,7 +884,9 @@ class Agent:
                         latency_ms=latency,
                     )
 
-                    await self._aemit(EventType.AGENT_END, {"success": True, "iterations": iterations})
+                    await self._aemit(
+                        EventType.AGENT_END, {"success": True, "iterations": iterations}
+                    )
 
                     return result
 
@@ -859,12 +906,45 @@ class Agent:
         except Exception as e:
             await self._aset_state(AgentState.FAILED)
             error_msg = str(e)
-            await self._aemit(EventType.AGENT_ERROR, {"error": error_msg, "error_type": type(e).__name__})
+            await self._aemit(
+                EventType.AGENT_ERROR, {"error": error_msg, "error_type": type(e).__name__}
+            )
             raise AgentError(f"Agent execution failed: {error_msg}", agent_name=self.name) from e
 
         finally:
             latency = (time.perf_counter() - start_time) * 1000
             self._total_usage = self._total_usage + total_usage
+
+    def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolResult] | None:
+        """Execute tool calls synchronously."""
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            # If an event loop is running, we can't use asyncio.run().
+            # This is a fallback that might not work perfectly in all situations but attempts
+            # to run the coroutine in another thread or uses a new loop if possible.
+            # For robust production use, streaming should use `astream`.
+            import threading
+
+            result = []
+
+            def run_in_thread() -> None:
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                result.append(new_loop.run_until_complete(self._aexecute_tool_calls(tool_calls)))
+                new_loop.close()
+
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            thread.join()
+            return result[0]
+        else:
+            return asyncio.run(self._aexecute_tool_calls(tool_calls))
 
     def stream(
         self,
@@ -897,10 +977,13 @@ class Agent:
             )
 
             if response.has_tool_calls:
-                messages.append(Message.assistant(content=response.content, tool_calls=response.tool_calls))
+                messages.append(
+                    Message.assistant(content=response.content, tool_calls=response.tool_calls)
+                )
                 tool_results = self._execute_tool_calls(response.tool_calls or [])
-                for tr in tool_results:
-                    messages.append(tr.to_message())
+                if tool_results:
+                    for tr in tool_results:
+                        messages.append(tr.to_message())
             else:
                 if response.content:
                     yield response.content
@@ -921,7 +1004,12 @@ class Agent:
         await self._aset_state(AgentState.RUNNING)
 
         try:
-            if self._memory and getattr(self._memory, "auto_summary", False) and getattr(self._memory, "max_messages", None) and len(self._memory) > self._memory.max_messages:
+            if (
+                self._memory
+                and getattr(self._memory, "auto_summary", False)
+                and self._memory.max_messages is not None
+                and len(self._memory) > self._memory.max_messages
+            ):
                 await self._memory.asummarize(self.provider.acomplete)
 
             messages = self._build_messages(prompt)
@@ -944,7 +1032,9 @@ class Agent:
                 )
 
                 if response.has_tool_calls:
-                    messages.append(Message.assistant(content=response.content, tool_calls=response.tool_calls))
+                    messages.append(
+                        Message.assistant(content=response.content, tool_calls=response.tool_calls)
+                    )
                     tool_results = await self._aexecute_tool_calls(response.tool_calls or [])
                     for tr in tool_results:
                         messages.append(tr.to_message())
@@ -977,6 +1067,6 @@ class Agent:
         """Context manager entry."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit."""
         self.cancel()

@@ -24,7 +24,7 @@ from typing import (
     get_type_hints,
 )
 
-import jsonschema
+import jsonschema  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentkit.core.exceptions import ToolError, ToolValidationError
@@ -381,7 +381,8 @@ def tool(
     def decorator(f: F) -> Tool:
         return Tool(
             name=name or f.__name__,
-            description=description or (f.__doc__.strip().split("\n")[0] if f.__doc__ else f"Execute {f.__name__}"),
+            description=description
+            or (f.__doc__.strip().split("\n")[0] if f.__doc__ else f"Execute {f.__name__}"),
             func=f,
             strict=strict,
             timeout=timeout,
@@ -390,6 +391,7 @@ def tool(
     if func is not None:
         return decorator(func)
     return decorator
+
 
 @tool
 def google_search(query: str) -> str:
@@ -411,11 +413,13 @@ def duckduckgo_search(query: str) -> str:
         query: The search query
     """
     try:
-        import requests
-        from bs4 import BeautifulSoup
+        import requests  # type: ignore[import-untyped]
+        from bs4 import BeautifulSoup  # type: ignore[import-not-found]
 
         url = f"https://duckduckgo.com/html/?q={query}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
 
@@ -478,7 +482,9 @@ class ToolRegistry:
         """Get tool definitions for all tools."""
         return [t.to_definition() for t in self._tools.values()]
 
-    def execute(self, name: str, arguments: str | dict[str, Any], validate: bool = True) -> ToolResult:
+    def execute(
+        self, name: str, arguments: str | dict[str, Any], validate: bool = True
+    ) -> ToolResult:
         """
         Execute a tool by name.
 
@@ -503,6 +509,8 @@ class ToolRegistry:
                     tool_name=name,
                     validation_errors=[{"message": f"Invalid JSON: {e}"}],
                 ) from e
+            if not isinstance(arguments, dict):
+                arguments = {}
 
         return tool.execute(arguments, validate=validate)
 
@@ -532,6 +540,8 @@ class ToolRegistry:
                     tool_name=name,
                     validation_errors=[{"message": f"Invalid JSON: {e}"}],
                 ) from e
+            if not isinstance(arguments, dict):
+                arguments = {}
 
         return await tool.aexecute(arguments, validate=validate)
 
@@ -550,7 +560,7 @@ class ToolRegistry:
         """Get the number of registered tools."""
         return len(self._tools)
 
-    def __iter__(self):
+    def __iter__(self) -> Any:
         """Iterate over tool names."""
         return iter(self._tools)
 
@@ -605,18 +615,23 @@ def calculator(expression: str) -> float:
         "ceil": math.ceil,
     }
 
-    def _eval(node):
+    def _eval(node: Any) -> Any:
         if isinstance(node, (ast.Num, ast.Constant)):
             return getattr(node, "n", getattr(node, "value", None))
         elif isinstance(node, ast.BinOp):
-            return operators[type(node.op)](_eval(node.left), _eval(node.right))
+            return operators[type(node.op)](_eval(node.left), _eval(node.right))  # type: ignore
         elif isinstance(node, ast.UnaryOp):
-            return operators[type(node.op)](_eval(node.operand))
+            return operators[type(node.op)](_eval(node.operand))  # type: ignore
         elif isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name) and node.func.id in allowed_names:
                 args = [_eval(arg) for arg in node.args]
-                return allowed_names[node.func.id](*args)
-            raise ValueError(f"Function {node.func.id if isinstance(node.func, ast.Name) else 'unknown'} not allowed")
+                import typing
+
+                func = typing.cast("typing.Callable[..., typing.Any]", allowed_names[node.func.id])
+                return func(*args)
+            raise ValueError(
+                f"Function {node.func.id if isinstance(node.func, ast.Name) else 'unknown'} not allowed"
+            )
         elif isinstance(node, ast.Name):
             if node.id in allowed_names and not callable(allowed_names[node.id]):
                 return allowed_names[node.id]
@@ -687,7 +702,7 @@ def json_stringify(obj: Any, indent: int = 2) -> str:
 
 
 # Collection of all built-in tools
-BUILTIN_TOOLS: list[Tool] = [
+BUILTIN_TOOLS: list[Any] = [
     calculator,
     current_datetime,
     json_parse,
@@ -695,7 +710,9 @@ BUILTIN_TOOLS: list[Tool] = [
 ]
 
 
-def get_builtin_tools(include: list[str] | None = None, exclude: list[str] | None = None) -> list[Tool]:
+def get_builtin_tools(
+    include: list[str] | None = None, exclude: list[str] | None = None
+) -> list[Tool]:
     """
     Get built-in tools, optionally filtered.
 

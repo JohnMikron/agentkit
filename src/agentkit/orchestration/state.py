@@ -10,6 +10,7 @@ class SharedState(BaseModel):
     Unified strongly-typed state context shared across all orchestrators
     (Workflow, Team, Swarm, Hierarchy).
     """
+
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     input: Any = None

@@ -22,13 +22,14 @@ StateType = TypeVar("StateType", bound=dict[str, Any] | BaseModel)
 
 class NodeResult(BaseModel):
     """Result of a node execution."""
+
     state_update: dict[str, Any]
     output: Any = None
 
 
 # A node is a callable that takes the current state and returns an update
-NodeFunc = Callable[[StateType], dict[str, Any] | NodeResult]
-AsyncNodeFunc = Callable[[StateType], Any] # Awaitable
+NodeFunc = Callable[[Any], dict[str, Any] | NodeResult]
+AsyncNodeFunc = Callable[[Any], Any]  # Awaitable
 
 
 class StateGraph(Generic[StateType]):
@@ -68,11 +69,7 @@ class StateGraph(Generic[StateType]):
         """Add a guaranteed routing edge from source to target."""
         self.add_conditional_edge(source, lambda _: target)
 
-    def add_conditional_edge(
-        self,
-        source: str,
-        condition: Callable[[StateType], str]
-    ) -> None:
+    def add_conditional_edge(self, source: str, condition: Callable[[StateType], str]) -> None:
         """
         Add a conditional edge from source.
 
@@ -111,19 +108,15 @@ class StateGraph(Generic[StateType]):
         if isinstance(current_state, dict):
             new_state = current_state.copy()
             new_state.update(update)
-            return new_state
+            return new_state  # type: ignore
         elif isinstance(current_state, BaseModel):
             # For Pydantic models, create a new instance with the updates
             data = current_state.model_dump()
             data.update(update)
-            return self.state_schema(**data) # type: ignore
+            return self.state_schema(**data)  # type: ignore
         return current_state
 
-    async def ainvoke(
-        self,
-        initial_state: StateType,
-        recursion_limit: int = 100
-    ) -> StateType:
+    async def ainvoke(self, initial_state: StateType, recursion_limit: int = 100) -> StateType:
         """
         Execute the graph asynchronously.
 

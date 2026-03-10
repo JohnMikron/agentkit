@@ -56,7 +56,7 @@ class ReflectionAgent:
         current_result = await self.agent.arun(prompt, **kwargs)
 
         for i in range(self.max_iterations):
-            logger.info(f"Reflection iteration {i+1}/{self.max_iterations}")
+            logger.info(f"Reflection iteration {i + 1}/{self.max_iterations}")
 
             # 2. Critique
             critique_prompt = f"Critique the following response to the prompt: '{prompt}'\n\nResponse:\n{current_result.content}\n\nIdentify any errors, omissions, or areas for improvement."
@@ -71,13 +71,11 @@ class ReflectionAgent:
     def run(self, prompt: str, **kwargs: Any) -> AgentResult:
         """Run the reflection loop synchronously."""
         import asyncio
+
         return asyncio.run(self.arun(prompt, **kwargs))
 
     async def arun_structured(
-        self,
-        prompt: str,
-        response_model: type[BaseModel],
-        **kwargs: Any
+        self, prompt: str, response_model: type[BaseModel], **kwargs: Any
     ) -> AgentResult:
         """
         Run the reflection loop and return a structured output.
@@ -92,5 +90,5 @@ class ReflectionAgent:
         return await self.agent.arun_structured(
             f"Extract the information from this text into the required format:\n\n{final_result.content}",
             response_model,
-            **kwargs
+            **kwargs,
         )

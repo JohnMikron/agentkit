@@ -89,10 +89,12 @@ class OllamaProvider(LLMProvider):
                     ]
                 result.append(ollama_msg)
             elif msg.role == Role.TOOL:
-                result.append({
-                    "role": "tool",
-                    "content": msg.content,
-                })
+                result.append(
+                    {
+                        "role": "tool",
+                        "content": msg.content,
+                    }
+                )
 
         return result
 
