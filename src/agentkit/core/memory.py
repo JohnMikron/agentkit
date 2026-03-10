@@ -256,28 +256,30 @@ class FileStorage(MemoryStorage[MemoryEntry]):
         self._entries: list[MemoryEntry] = []
         self._by_id: dict[str, MemoryEntry] = {}
         import threading
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
         # Load existing entries
         self._load_from_file()
 
     def _load_from_file(self) -> None:
         """Load entries from the file."""
-        if self.filepath.exists():
-            try:
-                with self.filepath.open(encoding="utf-8") as f:
-                    data = json.load(f)
-                    self._entries = [MemoryEntry.from_dict(e) for e in data]
-                    self._by_id = {e.id: e for e in self._entries}
-            except (json.JSONDecodeError, KeyError):
-                self._entries = []
-                self._by_id = {}
+        with self._lock:
+            if self.filepath.exists():
+                try:
+                    with self.filepath.open(encoding="utf-8") as f:
+                        data = json.load(f)
+                        self._entries = [MemoryEntry.from_dict(e) for e in data]
+                        self._by_id = {e.id: e for e in self._entries}
+                except (json.JSONDecodeError, KeyError):
+                    self._entries = []
+                    self._by_id = {}
 
     def _save_to_file(self) -> None:
         """Save entries to the file."""
-        self.filepath.parent.mkdir(parents=True, exist_ok=True)
-        with self.filepath.open("w", encoding="utf-8") as f:
-            json.dump([e.to_dict() for e in self._entries], f, indent=2)
+        with self._lock:
+            self.filepath.parent.mkdir(parents=True, exist_ok=True)
+            with self.filepath.open("w", encoding="utf-8") as f:
+                json.dump([e.to_dict() for e in self._entries], f, indent=2)
 
     def save(self, entry: MemoryEntry) -> str:
         """Save a memory entry."""

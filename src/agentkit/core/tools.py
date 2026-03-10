@@ -393,17 +393,6 @@ def tool(
     return decorator
 
 
-@tool
-def google_search(query: str) -> str:
-    """
-    Search Google for information.
-
-    Args:
-        query: The search query
-    """
-    raise NotImplementedError(
-        "Google Search API is not implemented in core yet. Use 'duckduckgo_search' or provide your own SERP tool."
-    )
 
 @tool
 def duckduckgo_search(query: str) -> str:
@@ -458,8 +447,9 @@ class ToolRegistry:
 
         Returns self for chaining.
         """
-        if tool.name in self._tools and not overwrite:
-            raise ToolError(f"Tool '{tool.name}' already registered", tool_name=tool.name)
+        if tool.name in self._tools:
+            if not overwrite:
+                raise ToolError(f"Tool '{tool.name}' already registered", tool_name=tool.name)
         self._tools[tool.name] = tool
         return self
 
