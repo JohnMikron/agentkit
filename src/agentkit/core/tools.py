@@ -255,22 +255,24 @@ class Tool(BaseModel):
         start_time = time.perf_counter()
 
         try:
-            result = self.func(**arguments)
-
-            # Handle async functions
-            if asyncio.iscoroutine(result):
-                # Create event loop if needed
+            # Handle async functions safely by checking the function before calling it
+            if inspect.iscoroutinefunction(self.func):
                 try:
                     asyncio.get_running_loop()
-                    # We're in an async context, can't use run_until_complete
+                    # We're in an async context, can't use run_until_complete in the main thread
                     import concurrent.futures
 
+                    def run_in_new_loop():
+                        return asyncio.run(self.func(**arguments))
+
                     with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, result)
+                        future = executor.submit(run_in_new_loop)
                         result = future.result()
                 except RuntimeError:
-                    # No running loop, create one
-                    result = asyncio.run(result)
+                    # No running loop, create one manually
+                    result = asyncio.run(self.func(**arguments))
+            else:
+                result = self.func(**arguments)
 
             execution_time = (time.perf_counter() - start_time) * 1000
 
@@ -403,30 +405,27 @@ def duckduckgo_search(query: str) -> str:
         query: The search query
     """
     try:
-        import requests  # type: ignore[import-untyped]
-        from bs4 import BeautifulSoup  # type: ignore[import-not-found]
+        from duckduckgo_search import DDGS  # type: ignore[import-untyped]
 
-        url = f"https://duckduckgo.com/html/?q={query}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        results = []
-        for result in soup.find_all("div", class_="result")[:5]:
-            title = result.find("a", class_="result__a")
-            snippet = result.find("a", class_="result__snippet")
-            if title and snippet:
-                results.append(f"{title.text.strip()}\n{title['href']}\n{snippet.text.strip()}")
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=5))
 
         if not results:
             return f"DuckDuckGo search for '{query}' returned no results. Falling back to internal knowledge."
 
-        return "\n\n".join(results)
+        formatted_results = []
+        for r in results:
+            title = r.get("title", "")
+            href = r.get("href", "")
+            body = r.get("body", "")
+            if title and href:
+                formatted_results.append(f"{title}\n{href}\n{body}")
+
+        return "\n\n".join(formatted_results)
+    except ImportError:
+        return "DuckDuckGo search error: The 'duckduckgo-search' library is not installed. Please install it using `pip install duckduckgo-search`."
     except Exception as e:
-        return f"DuckDuckGo search error: {e!s}. Please check your internet connection and ensure 'requests' and 'beautifulsoup4' are installed."
+        return f"DuckDuckGo search error: {e!s}. Please check your internet connection."
 
 
 class ToolRegistry:

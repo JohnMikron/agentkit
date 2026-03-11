@@ -405,9 +405,9 @@ class ModelId(str, Enum):
     O3_MINI = "o3-mini"
 
     # Anthropic
-    CLAUDE_4_6_OPUS = "claude-4-6-opus-latest"
-    CLAUDE_4_6_SONNET = "claude-4-6-sonnet-latest"
-    CLAUDE_4_5_HAIKU = "claude-4-5-haiku-latest"
+    CLAUDE_4_6_OPUS = "claude-opus-4-6-latest"
+    CLAUDE_4_6_SONNET = "claude-sonnet-4-6-latest"
+    CLAUDE_4_5_HAIKU = "claude-haiku-4-5-latest"
     CLAUDE_3_5_SONNET = "claude-3-5-sonnet-latest"
     CLAUDE_3_5_HAIKU = "claude-3-5-haiku-latest"
     CLAUDE_3_7_SONNET = "claude-3-7-sonnet-latest"
@@ -421,8 +421,8 @@ class ModelId(str, Enum):
 
     # Mistral
     MISTRAL_LARGE_3 = "mistral-large-3"
-    MAGISTRAL_1_2 = "magistral-1.2"
-    DEVSTRAL_2 = "devstral-2"
+    MAGISTRAL_1_2 = "magistral-medium-latest"
+    DEVSTRAL_2 = "devstral-latest"
     MISTRAL_LARGE = "mistral-large-latest"
     MISTRAL_SMALL = "mistral-small-latest"
     CODESTRAL = "codestral-latest"

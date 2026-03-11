@@ -12,7 +12,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentkit.core.config import Settings, get_settings
 from agentkit.core.exceptions import (
@@ -161,6 +161,13 @@ class AgentConfig(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_token_limits(self) -> "AgentConfig":
+        if self.max_tokens is not None and self.max_tokens_limit is not None:
+            if self.max_tokens_limit < self.max_tokens:
+                raise ValueError("max_tokens_limit must be >= max_tokens")
+        return self
 
     name: str = Field(default="agent", min_length=1, max_length=100)
     model: str = Field(default="gpt-5.4")
@@ -654,7 +661,23 @@ class Agent:
 
     def _estimate_cost(self, usage: Usage, model: str) -> float:
         """Estimate the USD cost of this run based on 2026 enterprise standard rates."""
+        if not model:
+            return 0.0
+
         rates = {
+            "gpt-5.4-pro": (0.030, 0.180),
+            "gpt-5.4": (0.0025, 0.015),
+            "gpt-5.3-instant": (0.00125, 0.0075),
+            "gpt-5.3-codex": (0.003, 0.009),
+            "gpt-4o-mini": (0.00015, 0.0006),
+            "gpt-4o": (0.005, 0.015),
+            "o1": (0.015, 0.060),
+            "o3-mini": (0.0011, 0.0044),
+            "claude-opus-4-6": (0.015, 0.075),
+            "claude-sonnet-4-6": (0.003, 0.015),
+            "claude-3-7-sonnet": (0.003, 0.015),
+            "gemini-3.1-pro": (0.0035, 0.0105),
+            "mistral-large-3": (0.002, 0.006),
             "gpt-4": (0.005, 0.015),
             "gpt-5": (0.010, 0.030),
             "claude-3-opus": (0.015, 0.075),
@@ -701,13 +724,7 @@ class Agent:
         schema = response_model.model_json_schema()
         structured_prompt = f"{prompt}\n\nYou MUST respond entirely in valid JSON format matching this schema:\n{json.dumps(schema, indent=2)}"
 
-        if (
-            self._memory
-            and getattr(self._memory, "auto_summary", False)
-            and self._memory.max_messages is not None
-            and len(self._memory) > self._memory.max_messages
-        ):
-            await self._memory.asummarize(self.provider.acomplete)
+        # auto-summarize relies purely on arun() handling it now
 
         result = await self.arun(structured_prompt, tools=tools, **kwargs)
 
@@ -800,19 +817,24 @@ class Agent:
                     **kwargs,
                 )
                 total_usage = total_usage + response.usage
+                iteration_cost = self._estimate_cost(response.usage, response.model or "")
+                self._total_cost = getattr(self, "_total_cost", 0.0) + iteration_cost
+
+                # Evaluate limits cumulatively tracking both agent history usage and current execution path
+                cumulative_tokens = self._total_usage.total_tokens + total_usage.total_tokens
+
                 if (
                     self.config.max_tokens_limit is not None
-                    and total_usage.total_tokens > self.config.max_tokens_limit
+                    and cumulative_tokens > self.config.max_tokens_limit
                 ):
                     raise AgentError(
-                        f"Token limit exceeded: used {total_usage.total_tokens}, limit {self.config.max_tokens_limit}"
+                        f"Token limit exceeded: used {cumulative_tokens}, limit {self.config.max_tokens_limit}"
                     )
 
                 if self.config.max_budget_usd is not None:
-                    cost = self._estimate_cost(total_usage, response.model or "")
-                    if cost > self.config.max_budget_usd:
+                    if self._total_cost > self.config.max_budget_usd:
                         raise AgentError(
-                            f"Budget limit exceeded: spent ${cost:.4f}, limit ${self.config.max_budget_usd:.4f}"
+                            f"Budget limit exceeded: spent ${self._total_cost:.4f}, limit ${self.config.max_budget_usd:.4f}"
                         )
 
                 # Emit LLM response event
@@ -945,7 +967,9 @@ class Agent:
 
             thread = threading.Thread(target=run_in_thread)
             thread.start()
-            thread.join()
+            thread.join(timeout=self.config.timeout or 60.0)
+            if thread.is_alive():
+                raise ToolError("Tool execution taking longer than timeout threshold", tool_name="system_thread")
             return result[0]
         else:
             return asyncio.run(self._aexecute_tool_calls(tool_calls))
@@ -987,6 +1011,21 @@ class Agent:
             )
 
             self._total_usage = self._total_usage + response.usage
+            iteration_cost = self._estimate_cost(response.usage, response.model or "")
+            self._total_cost = getattr(self, "_total_cost", 0.0) + iteration_cost
+
+            if (
+                self.config.max_tokens_limit is not None
+                and self._total_usage.total_tokens > self.config.max_tokens_limit
+            ):
+                raise AgentError(
+                    f"Token limit exceeded: used {self._total_usage.total_tokens}, limit {self.config.max_tokens_limit}"
+                )
+
+            if self.config.max_budget_usd is not None and self._total_cost > self.config.max_budget_usd:
+                raise AgentError(
+                    f"Budget limit exceeded: spent ${self._total_cost:.4f}, limit ${self.config.max_budget_usd:.4f}"
+                )
 
             if response.has_tool_calls:
                 messages.append(
@@ -1052,6 +1091,21 @@ class Agent:
                 )
 
                 self._total_usage = self._total_usage + response.usage
+                iteration_cost = self._estimate_cost(response.usage, response.model or "")
+                self._total_cost = getattr(self, "_total_cost", 0.0) + iteration_cost
+
+                if (
+                    self.config.max_tokens_limit is not None
+                    and self._total_usage.total_tokens > self.config.max_tokens_limit
+                ):
+                    raise AgentError(
+                        f"Token limit exceeded: used {self._total_usage.total_tokens}, limit {self.config.max_tokens_limit}"
+                    )
+
+                if self.config.max_budget_usd is not None and self._total_cost > self.config.max_budget_usd:
+                    raise AgentError(
+                        f"Budget limit exceeded: spent ${self._total_cost:.4f}, limit ${self.config.max_budget_usd:.4f}"
+                    )
 
                 if response.has_tool_calls:
                     messages.append(
