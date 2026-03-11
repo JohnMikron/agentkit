@@ -154,8 +154,7 @@ class AnthropicProvider(LLMProvider):
         if system_prompt:
             body["system"] = system_prompt
 
-        if self.temperature != 0.7 or "temperature" in kwargs:
-            body["temperature"] = kwargs.get("temperature", self.temperature)
+        body["temperature"] = kwargs.get("temperature", self.temperature)
 
         if tools:
             body["tools"] = self._convert_tools(tools)
@@ -341,4 +340,5 @@ class AnthropicProvider(LLMProvider):
 
     def __del__(self) -> None:
         """Clean up HTTP clients."""
-        self._client.close()
+        if hasattr(self, "_client"):
+            self._client.close()

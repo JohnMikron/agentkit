@@ -320,6 +320,11 @@ class Workflow:
             )
 
         # Initialize state
+        for step in self._steps.values():
+            step.status = StepStatus.PENDING
+            step.result = None
+            step.attempts = 0
+
         initial_context = SharedState()
         if context:
             for k, v in context.items():

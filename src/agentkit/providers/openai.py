@@ -328,6 +328,8 @@ class OpenAIProvider(LLMProvider):
 
     def __del__(self) -> None:
         """Clean up HTTP clients."""
+        # Note: We can't easily clean up async client in __del__
+        # It should rely on garbage collection
         if hasattr(self, "_client"):
             self._client.close()
         if hasattr(self, "_async_client"):

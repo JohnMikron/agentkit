@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -41,7 +42,7 @@ class MemoryEntry:
         embedding: Optional vector embedding for semantic search
     """
 
-    id: str = field(default_factory=lambda: f"mem_{int(time.time() * 1000)}")
+    id: str = field(default_factory=lambda: f"mem_{uuid.uuid4().hex}")
     role: str = "user"
     content: str = ""
     timestamp: datetime = field(default_factory=datetime.utcnow)

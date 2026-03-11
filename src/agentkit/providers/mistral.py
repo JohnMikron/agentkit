@@ -260,4 +260,5 @@ class MistralProvider(LLMProvider):
 
     def __del__(self) -> None:
         """Clean up HTTP clients."""
-        self._client.close()
+        if hasattr(self, "_client"):
+            self._client.close()

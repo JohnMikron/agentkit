@@ -95,9 +95,8 @@ class Swarm:
 
                 tool_name = f"transfer_to_{target_name}"
 
-                # Check if tool already injected
-                if any(t.name == tool_name for t in current_agent.tools):
-                    continue
+                # Remove tool if already injected
+                current_agent.tools = [t for t in current_agent.tools if t.name != tool_name]
 
                 # Create the transfer tool for this specific target
                 def make_transfer_tool(target: str) -> Tool:
