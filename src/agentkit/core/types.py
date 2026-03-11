@@ -3,6 +3,8 @@ Core types and data structures for AgentKit.
 
 This module defines the fundamental types used throughout the framework,
 including messages, tool definitions, and configuration structures.
+Models defined here serve as validated fallbacks, but the Agent API 
+is generic and supports ANY modern unlisted LLM model identifier natively.
 """
 
 from __future__ import annotations
@@ -74,8 +76,11 @@ class Message(BaseModel):
         """Convert to API-compatible dictionary format."""
         result: dict[str, Any] = {"role": self.role.value}
 
-        if self.content:
+        if self.content is not None and self.content != "":
             result["content"] = self.content
+        elif self.role in (Role.USER, Role.TOOL, Role.ASSISTANT):
+            # Strict Open-Standard conformity (Mistral 400 patch)
+            result["content"] = ""
 
         if self.name:
             result["name"] = self.name

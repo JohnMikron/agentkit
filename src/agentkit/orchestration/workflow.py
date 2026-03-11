@@ -268,7 +268,6 @@ class Workflow:
 
         tmpl = Template(template)
         kwargs = context.model_dump()
-        kwargs.update(context.__dict__)
         if hasattr(context, "__pydantic_extra__") and context.__pydantic_extra__:
             kwargs.update(context.__pydantic_extra__)
         return tmpl.render(**kwargs)
@@ -437,11 +436,11 @@ class Workflow:
                                             else "Agent execution reported failure"
                                         )
                             except Exception as e:
-                                errors.append(
-                                    f"Step '{step_name}' attempt {step.attempts} failed: {e}"
-                                )
-                                raise
-                except Exception:
+                                raise e
+                except Exception as final_e:
+                    errors.append(
+                        f"Step '{step_name}' failed after {step.attempts} attempts: {final_e}"
+                    )
                     step.status = StepStatus.FAILED
                     step.result = AgentResult(
                         success=False,

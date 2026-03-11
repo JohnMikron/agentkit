@@ -210,6 +210,9 @@ Respond with ONLY the category name, nothing else."""
 
     def _determine_routes(self, input: str) -> list[Route]:
         """Determine which routes to use based on strategy."""
+        if self.strategy == RouteStrategy.LLM:
+            return self._route_keyword(input)
+        
         if self.strategy == RouteStrategy.ALL:
             return list(self._routes.values())
 

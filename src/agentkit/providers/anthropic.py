@@ -36,8 +36,6 @@ class AnthropicProvider(LLMProvider):
     """
     Anthropic API provider.
 
-    Supports Claude 3 Opus, Sonnet, Haiku and Claude 3.5 models.
-
     Example:
         provider = AnthropicProvider(
             model="claude-3-5-sonnet-latest",

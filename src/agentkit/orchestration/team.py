@@ -92,14 +92,11 @@ class Team:
         result = await team.arun("Research and write about AI")
     """
 
-    def __init__(
-        self,
-        name: str = "team",
-        strategy: TeamStrategy = TeamStrategy.SEQUENTIAL,
-        config: TeamConfig | None = None,
-    ) -> None:
-        self.config = config or TeamConfig(name=name, strategy=strategy)
-        self._agents: dict[str, AgentConfig] = {}
+    def __init__(self, name: str = "team", config: TeamConfig | None = None) -> None:
+        self.name = name
+        self.config = config or TeamConfig(name=name)
+
+        self._agents: dict[str, TeamAgentConfig] = {}
         self._leader: Agent | None = None
 
     def add_agent(
@@ -114,7 +111,7 @@ class Team:
 
         Returns self for chaining.
         """
-        self._agents[agent.name] = AgentConfig(
+        self._agents[agent.name] = TeamAgentConfig(
             agent=agent,
             role=role,
             weight=weight,
@@ -137,10 +134,9 @@ class Team:
 
     def get_agents(self, role: TeamRole | None = None) -> list[Agent]:
         """Get agents, optionally filtered by role."""
-        agents = [cfg.agent for cfg in self._agents.values()]
         if role:
-            agents = [a for cfg in self._agents.values() if cfg.role == role for a in [cfg.agent]]
-        return agents
+            return [cfg.agent for cfg in self._agents.values() if cfg.role == role]
+        return [cfg.agent for cfg in self._agents.values()]
 
     async def arun(self, task: str, **kwargs: Any) -> TeamResult:
         """
@@ -249,7 +245,7 @@ class Team:
         errors: list[str] = []
 
         # Create tasks for all agents
-        async def run_agent(cfg: AgentConfig) -> tuple[str, AgentResult]:
+        async def run_agent(cfg: TeamAgentConfig) -> tuple[str, AgentResult]:
             try:
                 result = await cfg.agent.arun(task, **kwargs)
                 return cfg.agent.name, result
@@ -262,7 +258,7 @@ class Team:
         # Run in parallel with semaphore
         semaphore = asyncio.Semaphore(self.config.max_parallel)
 
-        async def bounded_run(cfg: AgentConfig) -> tuple[str, AgentResult]:
+        async def bounded_run(cfg: TeamAgentConfig) -> tuple[str, AgentResult]:
             async with semaphore:
                 return await run_agent(cfg)
 
@@ -367,6 +363,7 @@ Original task: {task}"""
 
             final_result = await self._leader.arun(aggregate_prompt, **kwargs)
             results[f"{self._leader.name}_final"] = final_result
+            total_iterations += final_result.iterations
 
             return TeamResult(
                 success=True,

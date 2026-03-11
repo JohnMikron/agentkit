@@ -32,6 +32,8 @@ from agentkit.providers import (
     OpenAIProvider,
 )
 from agentkit.providers.mock import MockProvider
+from agentkit.providers.mock import MockProvider
+from agentkit.advanced.telemetry import OpenTelemetryHook
 
 __version__ = "1.2.0"
 __author__ = "AgentKit Team"
@@ -53,6 +55,7 @@ __all__ = [
     "MockProvider",
     "OllamaProvider",
     "OpenAIProvider",
+    "OpenTelemetryHook",
     "Role",
     "SQLiteStorage",
     "Tool",

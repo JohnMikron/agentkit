@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -145,7 +146,7 @@ class GoogleProvider(LLMProvider):
         body = self._convert_messages(messages)
 
         generation_config: dict[str, Any] = {}
-        if self.temperature != 0.7 or "temperature" in kwargs:
+        if "temperature" in kwargs or self.temperature is not None:
             generation_config["temperature"] = kwargs.get("temperature", self.temperature)
         if self.max_tokens or "max_tokens" in kwargs:
             generation_config["maxOutputTokens"] = kwargs.get("max_tokens", self.max_tokens)
@@ -183,7 +184,7 @@ class GoogleProvider(LLMProvider):
                 fc = part["functionCall"]
                 tool_calls.append(
                     ToolCall(
-                        id=f"call_{fc.get('name', '')}_{hash(str(fc.get('args', {})))}",
+                        id=f"call_{uuid.uuid4().hex[:24]}",
                         name=fc.get("name", ""),
                         arguments=json.dumps(fc.get("args", {})),
                     )
@@ -291,9 +292,10 @@ class GoogleProvider(LLMProvider):
         with self._client.stream(
             "POST",
             f"{self.base_url}/{self.model}:streamGenerateContent",
-            params={"key": self.api_key, "alt": "sse"},
+            params={"key": self.api_key},
             json=body,
         ) as response:
+            response.raise_for_status()
             for line in response.iter_lines():
                 if line.startswith("data: "):
                     try:
@@ -317,9 +319,10 @@ class GoogleProvider(LLMProvider):
         async with self._async_client.stream(
             "POST",
             f"{self.base_url}/{self.model}:streamGenerateContent",
-            params={"key": self.api_key, "alt": "sse"},
+            params={"key": self.api_key},
             json=body,
         ) as response:
+            response.raise_for_status()
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
                     try:

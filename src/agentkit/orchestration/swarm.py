@@ -76,46 +76,36 @@ class Swarm:
         This automatically gives the agent the ability to transfer
         to any other currently registered agent in the swarm.
         """
+        if agent.name in self._agents:
+            return self
+
+        # 1. Existing agents get a tool to transfer to the new agent
+        for existing_name, existing_agent in self._agents.items():
+            tool_name = f"transfer_to_{agent.name}"
+            existing_agent.tools = [t for t in existing_agent.tools if t.name != tool_name]
+            existing_agent.add_tool(self._make_transfer_tool(agent.name))
+
+        # 2. The new agent gets tools to transfer to all existing agents
+        for existing_name in self._agents.keys():
+            tool_name = f"transfer_to_{existing_name}"
+            agent.tools = [t for t in agent.tools if t.name != tool_name]
+            agent.add_tool(self._make_transfer_tool(existing_name))
+
         self._agents[agent.name] = agent
-        self._inject_transfer_tools()
         return self
 
-    def _inject_transfer_tools(self) -> None:
-        """Inject transfer tools into all agents so they can reach each other."""
-        agent_names = list(self._agents.keys())
+    def _make_transfer_tool(self, target: str) -> Tool:
+        def transfer_routine(context: str) -> TransferTarget:
+            """Transfer execution to another agent."""
+            return TransferTarget(target_agent=target, context=context)
 
-        for current_name, current_agent in self._agents.items():
-            # Remove existing transfer tools to recreate them
-            # (In a real implementation we'd filter by name, but for simplicity here we assume
-            # we just add the new ones if they don't exist).
+        transfer_routine.__doc__ = f"Transfer the conversation to the '{target}' agent.\n\nArgs:\n    context: Information to pass to the next agent."
 
-            for target_name in agent_names:
-                if current_name == target_name:
-                    continue
-
-                tool_name = f"transfer_to_{target_name}"
-
-                # Remove tool if already injected
-                current_agent.tools = [t for t in current_agent.tools if t.name != tool_name]
-
-                # Create the transfer tool for this specific target
-                def make_transfer_tool(target: str) -> Tool:
-                    def transfer_routine(context: str) -> TransferTarget:
-                        """
-                        Transfer execution to another agent.
-                        """
-                        return TransferTarget(target_agent=target, context=context)
-
-                    # Update docstring for dynamic schema gen
-                    transfer_routine.__doc__ = f"Transfer the conversation to the '{target}' agent.\n\nArgs:\n    context: Information to pass to the next agent."
-
-                    return Tool(
-                        name=f"transfer_to_{target}",
-                        description=f"Transfer control to the {target} agent for specialized handling.",
-                        func=transfer_routine,
-                    )
-
-                current_agent.add_tool(make_transfer_tool(target_name))
+        return Tool(
+            name=f"transfer_to_{target}",
+            description=f"Transfer control to the {target} agent for specialized handling.",
+            func=transfer_routine,
+        )
 
     async def arun(
         self,
@@ -173,7 +163,7 @@ class Swarm:
                         # the stringified version or internal context might not be perfectly extracted.
                         # For a robust implementation, ToolResult should store the raw object.
                         # Here we rely on parsing the name since we injected it.
-                        target_name = tr.name.replace("transfer_to_", "")
+                        target_name = tr.name[12:]
                         if target_name in self._agents:
                             transfer_target = target_name
                             # The context is usually in the arguments or the result content

@@ -55,8 +55,9 @@ class StateGraph(Generic[StateType]):
             state_schema: The schema for the graph's state (BaseModel class or dict).
         """
         self.state_schema = state_schema
+        self.state_schema = state_schema
         self._nodes: dict[str, NodeFunc | AsyncNodeFunc] = {}
-        self._edges: dict[str, list[tuple[Callable[[StateType], str], str]]] = {}
+        self._edges: dict[str, list[tuple[Callable[[StateType], str], Any]]] = {}
         self._compiled = False
 
     def add_node(self, name: str, node: NodeFunc | AsyncNodeFunc) -> None:
@@ -67,9 +68,14 @@ class StateGraph(Generic[StateType]):
 
     def add_edge(self, source: str, target: str) -> None:
         """Add a guaranteed routing edge from source to target."""
-        self.add_conditional_edge(source, lambda _: target)
+        self.add_conditional_edge(source, lambda _: target, path_map=[target])
 
-    def add_conditional_edge(self, source: str, condition: Callable[[StateType], str]) -> None:
+    def add_conditional_edge(
+        self,
+        source: str,
+        condition: Callable[[StateType], str],
+        path_map: dict[str, str] | list[str] | str | None = None,
+    ) -> None:
         """
         Add a conditional edge from source.
 
@@ -81,7 +87,7 @@ class StateGraph(Generic[StateType]):
 
         # We store edges as a list of conditions, but typically
         # only the first one that matches is used.
-        self._edges[source].append((condition, ""))
+        self._edges[source].append((condition, path_map))
 
     def set_entry_point(self, node: str) -> None:
         """Set the starting node of the graph."""
@@ -97,9 +103,18 @@ class StateGraph(Generic[StateType]):
             raise ValueError("No entry point set. Call set_entry_point().")
 
         # Verify all targets exist
-        for source, _edges in self._edges.items():
+        # Verify all targets exist
+        for source, edges in self._edges.items():
             if source != self.START and source not in self._nodes:
                 raise ValueError(f"Edge from unknown node: {source}")
+
+            for _, path_map in edges:
+                if not path_map:
+                    continue
+                targets = path_map.values() if isinstance(path_map, dict) else (path_map if isinstance(path_map, list) else [path_map])
+                for t in targets:
+                    if t != self.END and t not in self._nodes:
+                        raise ValueError(f"Edge from '{source}' points to unknown target: '{t}'")
 
         self._compiled = True
 
