@@ -432,7 +432,7 @@ class RedisStorage(MemoryStorage[MemoryEntry]):
         key = self._get_key(entry_id)
         pipe = self._redis.pipeline()
         pipe.delete(key)
-        pipe.lrem(self._list_key, 0, entry_id)
+        pipe.lrem(self._list_key, 0, entry_id.encode("utf-8"))
         results = pipe.execute()
         return bool(results[0] > 0)
 
@@ -610,12 +610,12 @@ class SQLiteStorage(MemoryStorage[MemoryEntry]):
             db_path: Path to the SQLite database file
         """
         self.db_path = db_path
+        import sqlite3
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._init_db()
 
     def _get_connection(self) -> Any:
-        import sqlite3
-
-        return sqlite3.connect(self.db_path)
+        return self._conn
 
     def _init_db(self) -> None:
         with self._get_connection() as conn:
@@ -773,20 +773,29 @@ class Memory:
             True if summarization occurred, False otherwise.
         """
         history = self.get_history()
-        if len(history) <= keep_recent + 1:
+        system_messages = [m for m in history if m.role == Role.SYSTEM]
+        history_no_system = [m for m in history if m.role != Role.SYSTEM]
+
+        if len(history_no_system) <= keep_recent + 1:
             return False
 
-        to_summarize = history[:-keep_recent]
-        recent = history[-keep_recent:]
+        to_summarize = history_no_system[:-keep_recent]
+        recent = history_no_system[-keep_recent:]
 
         prompt = "Summarize the following conversation concisely, focusing on key facts, decisions, and context:\n\n"
         for m in to_summarize:
-            prompt += f"{m.role}: {m.content}\n"
+            prompt += f"{m.role.value}: {m.content}\n"
 
         summary_response = await provider_complete(messages=[Message.user(prompt)])
 
         self.clear()
+
+        # Restore system messages
+        for m in system_messages:
+            self.add_message(m)
+
         self.add_system_message(f"Summary of prior conversation: {summary_response.content}")
+
         for m in recent:
             self.add_message(m)
 

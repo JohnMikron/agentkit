@@ -14,8 +14,12 @@ from functools import lru_cache
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import threading
 
 from agentkit.core.types import ModelId
+
+_settings_lock = threading.Lock()
+_settings_instance: Settings | None = None
 
 
 class LLMSettings(BaseSettings):
@@ -269,17 +273,23 @@ class Settings(BaseSettings):
         return cls(**data)
 
 
-@lru_cache
 def get_settings() -> Settings:
     """
     Get cached settings instance.
 
     Settings are loaded once and cached for the lifetime of the application.
-    Clear the cache with get_settings.cache_clear() if needed.
+    Clear the cache with clear_settings_cache() if needed.
     """
-    return Settings.from_env()
+    global _settings_instance
+    if _settings_instance is None:
+        with _settings_lock:
+            if _settings_instance is None:
+                _settings_instance = Settings.from_env()
+    return _settings_instance
 
 
 def clear_settings_cache() -> None:
     """Clear the settings cache."""
-    get_settings.cache_clear()
+    global _settings_instance
+    with _settings_lock:
+        _settings_instance = None

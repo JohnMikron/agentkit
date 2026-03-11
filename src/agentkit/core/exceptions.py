@@ -364,7 +364,7 @@ class AgentTimeoutError(AgentError):
 # =============================================================================
 
 
-class MemoryError(AgentKitError):
+class AgentMemoryError(AgentKitError):
     """Base exception for memory-related errors."""
 
     def __init__(
@@ -376,7 +376,7 @@ class MemoryError(AgentKitError):
         super().__init__(message, code=code or "MEMORY_ERROR", details=details)
 
 
-class MemoryStorageError(MemoryError):
+class MemoryStorageError(AgentMemoryError):
     """Raised when memory storage operation fails."""
 
     def __init__(self, operation: str, original_error: Exception | None = None) -> None:

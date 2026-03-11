@@ -47,7 +47,7 @@ _PYTHON_TO_JSON_TYPE: dict[type, str] = {
 }
 
 
-def _get_json_type(python_type: type) -> str:
+def _get_json_type(python_type: type) -> Any:
     """Convert Python type to JSON Schema type."""
     # Handle typing types
     origin = getattr(python_type, "__origin__", None)
@@ -62,7 +62,7 @@ def _get_json_type(python_type: type) -> str:
         non_none_args = [a for a in args if a is not type(None)]
         if len(non_none_args) == 1:
             return _get_json_type(non_none_args[0])
-        return "any"
+        return {"anyOf": [{"type": _get_json_type(a)} for a in non_none_args]}
 
     return _PYTHON_TO_JSON_TYPE.get(python_type, "string")
 
@@ -89,7 +89,10 @@ def _generate_schema_from_function(func: Callable[..., Any]) -> dict[str, Any]:
         param_type = hints.get(param_name, str)
         json_type = _get_json_type(param_type)
 
-        prop: dict[str, Any] = {"type": json_type}
+        if isinstance(json_type, dict):
+            prop: dict[str, Any] = json_type.copy()
+        else:
+            prop: dict[str, Any] = {"type": json_type}
 
         # Add description from docstring
         if param_name in param_docs:
@@ -101,7 +104,7 @@ def _generate_schema_from_function(func: Callable[..., Any]) -> dict[str, Any]:
             prop["enum"] = list(param_type.__args__)
 
         # Handle array items
-        if json_type == "array" and hasattr(param_type, "__args__"):
+        if isinstance(json_type, str) and json_type == "array" and hasattr(param_type, "__args__"):
             item_type = param_type.__args__[0] if param_type.__args__ else str
             prop["items"] = {"type": _get_json_type(item_type)}
 
@@ -267,7 +270,10 @@ class Tool(BaseModel):
 
                     with concurrent.futures.ThreadPoolExecutor() as executor:
                         future = executor.submit(run_in_new_loop)
-                        result = future.result()
+                        try:
+                            result = future.result(timeout=self.timeout)
+                        except concurrent.futures.TimeoutError:
+                            raise ToolTimeoutError(self.name, self.timeout or 0.0)
                 except RuntimeError:
                     # No running loop, create one manually
                     result = asyncio.run(self.func(**arguments))

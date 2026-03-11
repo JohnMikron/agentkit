@@ -64,7 +64,11 @@ class ReflectionAgent:
 
             # 3. Refinement
             refine_prompt = f"Refine the following response based on the provided critique.\n\nOriginal Prompt: '{prompt}'\n\nOriginal Response:\n{current_result.content}\n\nCritique:\n{critique_result.content}\n\nProvide the final improved version."
-            current_result = await self.agent.arun(refine_prompt, **kwargs)
+            RefinedResult = await self.agent.arun(refine_prompt, **kwargs)
+            RefinedResult.usage = current_result.usage + critique_result.usage + RefinedResult.usage
+            RefinedResult.tool_results = current_result.tool_results + critique_result.tool_results + RefinedResult.tool_results
+            RefinedResult.iterations += current_result.iterations + critique_result.iterations
+            current_result = RefinedResult
 
         return current_result
 

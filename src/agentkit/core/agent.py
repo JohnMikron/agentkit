@@ -170,7 +170,7 @@ class AgentConfig(BaseModel):
         return self
 
     name: str = Field(default="agent", min_length=1, max_length=100)
-    model: str = Field(default="gpt-5.4")
+    model: str = Field(default="gpt-5.4", min_length=1)
     provider: str = Field(default="openai")
     system_prompt: str | None = Field(default=None)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
@@ -246,12 +246,17 @@ class Agent:
             **kwargs: Additional configuration options
         """
         # Use provided config or create from parameters
+        # Extract final model evaluating missing keys correctly
+        model_val = model if model is not None else kwargs.get("model", "gpt-5.4")
+        if model_val == "": # Extra safeguard matching direct injection
+            model_val = "gpt-5.4"
+
         if config:
             self.config = config
         else:
             self.config = AgentConfig(
                 name=name,
-                model=model or kwargs.get("model", "gpt-5.4"),
+                model=model_val,
                 system_prompt=system_prompt or kwargs.get("system_prompt"),
                 memory_enabled=memory or kwargs.get("memory_enabled", False),
                 **{k: v for k, v in kwargs.items() if k in AgentConfig.model_fields},
@@ -289,7 +294,10 @@ class Agent:
                 self._tools.add(tool)
 
         # Token usage tracking
+        import threading
+        self._usage_lock = threading.Lock()
         self._total_usage = Usage()
+        self._total_cost = 0.0
 
         logger.info(
             "Agent initialized",
@@ -568,15 +576,18 @@ class Agent:
     def _build_messages(self, user_input: str) -> list[Message]:
         """Build message list for LLM."""
         messages = []
-
-        # Add system prompt
-        system = self.config.system_prompt or f"You are a helpful AI assistant named {self.name}."
-        messages.append(Message.system(system))
+        has_system = False
 
         # Add memory history if enabled
         if self._memory is not None:
             history = self._memory.get_history(limit=self.config.memory_max_entries)
             messages.extend(history)
+            has_system = any(m.role == Role.SYSTEM for m in history)
+
+        # Add system prompt if not in history
+        if not has_system:
+            system = self.config.system_prompt or f"You are a helpful AI assistant named {self.name}."
+            messages.insert(0, Message.system(system))
 
         # Add current input
         messages.append(Message.user(user_input))
@@ -888,12 +899,10 @@ class Agent:
                     messages.append(final_msg)
                     all_messages.append(final_msg)
 
-                    # Store in memory
                     if self._memory is not None:
                         self._memory.add_user_message(prompt)
                         self._memory.add_assistant_message(final_content)
 
-                    self._total_usage = self._total_usage + total_usage
                     await self._aset_state(AgentState.COMPLETED)
 
                     latency = (time.perf_counter() - start_time) * 1000
@@ -939,7 +948,9 @@ class Agent:
 
         finally:
             latency = (time.perf_counter() - start_time) * 1000
-            self._total_usage = self._total_usage + total_usage
+            with self._usage_lock:
+                self._total_usage = self._total_usage + total_usage
+                self._total_cost += self._estimate_cost(total_usage, self.config.model)
 
     def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolResult] | None:
         """Execute tool calls synchronously."""
@@ -956,16 +967,22 @@ class Agent:
             # to run the coroutine in another thread or uses a new loop if possible.
             # For robust production use, streaming should use `astream`.
             import threading
-
+            import contextvars
+            
+            ctx = contextvars.copy_context()
             result = []
 
             def run_in_thread() -> None:
                 new_loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(new_loop)
-                result.append(new_loop.run_until_complete(self._aexecute_tool_calls(tool_calls)))
-                new_loop.close()
+                try:
+                    res = new_loop.run_until_complete(self._aexecute_tool_calls(tool_calls))
+                    result.append(res)
+                finally:
+                    new_loop.close()
 
-            thread = threading.Thread(target=run_in_thread)
+            thread = threading.Thread(target=ctx.run, args=(run_in_thread,))
+            thread.daemon = True
             thread.start()
             thread.join(timeout=self.config.timeout or 60.0)
             if thread.is_alive():
@@ -986,62 +1003,73 @@ class Agent:
         Yields:
             Text chunks from the response
         """
-        messages = self._build_messages(prompt)
-        tool_defs = self._tools.get_definitions()
-        if tools:
-            tool_defs.extend([t.to_definition() for t in tools])
+        self._state = AgentState.RUNNING
+        try:
+            messages = self._build_messages(prompt)
+            tool_defs = self._tools.get_definitions()
+            if tools:
+                tool_defs.extend([t.to_definition() for t in tools])
 
-        if not tool_defs:
-            full_content = ""
-            for chunk in self.provider.stream(messages=messages, **kwargs):
-                full_content += chunk
-                yield chunk
-            if self._memory and full_content:
-                self._memory.add_user_message(prompt)
-                self._memory.add_assistant_message(full_content)
-            return
+            if not tool_defs:
+                full_content = ""
+                for chunk in self.provider.stream(messages=messages, **kwargs):
+                    full_content += chunk
+                    yield chunk
+                if self._memory and full_content:
+                    self._memory.add_user_message(prompt)
+                    self._memory.add_assistant_message(full_content)
+                return
 
-        iterations = 0
-        while iterations < self.config.max_iterations:
-            iterations += 1
-            response = self.provider.complete(
-                messages=messages,
-                tools=tool_defs,
-                **kwargs,
-            )
-
-            self._total_usage = self._total_usage + response.usage
-            iteration_cost = self._estimate_cost(response.usage, response.model or "")
-            self._total_cost = getattr(self, "_total_cost", 0.0) + iteration_cost
-
-            if (
-                self.config.max_tokens_limit is not None
-                and self._total_usage.total_tokens > self.config.max_tokens_limit
-            ):
-                raise AgentError(
-                    f"Token limit exceeded: used {self._total_usage.total_tokens}, limit {self.config.max_tokens_limit}"
+            iterations = 0
+            while iterations < self.config.max_iterations:
+                iterations += 1
+                response = self.provider.complete(
+                    messages=messages,
+                    tools=tool_defs,
+                    **kwargs,
                 )
 
-            if self.config.max_budget_usd is not None and self._total_cost > self.config.max_budget_usd:
-                raise AgentError(
-                    f"Budget limit exceeded: spent ${self._total_cost:.4f}, limit ${self.config.max_budget_usd:.4f}"
-                )
+                with self._usage_lock:
+                    self._total_usage = self._total_usage + response.usage
+                    iteration_cost = self._estimate_cost(response.usage, response.model or "")
+                    self._total_cost += iteration_cost
 
-            if response.has_tool_calls:
-                messages.append(
-                    Message.assistant(content=response.content, tool_calls=response.tool_calls)
-                )
-                tool_results = self._execute_tool_calls(response.tool_calls or [])
-                if tool_results:
-                    for tr in tool_results:
-                        messages.append(tr.to_message())
-            else:
-                if response.content:
-                    if self._memory:
-                        self._memory.add_user_message(prompt)
-                        self._memory.add_assistant_message(response.content)
-                    yield response.content
-                break
+                if (
+                    self.config.max_tokens_limit is not None
+                    and self._total_usage.total_tokens > self.config.max_tokens_limit
+                ):
+                    raise AgentError(
+                        f"Token limit exceeded: used {self._total_usage.total_tokens}, limit {self.config.max_tokens_limit}"
+                    )
+
+                if self.config.max_budget_usd is not None and self._total_cost > self.config.max_budget_usd:
+                    raise AgentError(
+                        f"Budget limit exceeded: spent ${self._total_cost:.4f}, limit ${self.config.max_budget_usd:.4f}"
+                    )
+
+                if response.has_tool_calls:
+                    all_tool_calls.extend(response.tool_calls or [])
+                    if len(all_tool_calls) > self.config.max_tool_calls:
+                        raise AgentMaxIterationsError(self.name, self.config.max_tool_calls)
+
+                    messages.append(
+                        Message.assistant(content=response.content, tool_calls=response.tool_calls)
+                    )
+                    tool_results = self._execute_tool_calls(response.tool_calls or [])
+                    if tool_results:
+                        for tr in tool_results:
+                            messages.append(tr.to_message())
+                    if response.content:
+                        if self._memory:
+                            self._memory.add_user_message(prompt)
+                            self._memory.add_assistant_message(response.content)
+                        yield response.content
+                    break
+        except Exception:
+            self._state = AgentState.FAILED
+            raise
+        finally:
+            self._state = AgentState.COMPLETED
 
     async def astream(
         self,
@@ -1090,9 +1118,10 @@ class Agent:
                     **kwargs,
                 )
 
-                self._total_usage = self._total_usage + response.usage
-                iteration_cost = self._estimate_cost(response.usage, response.model or "")
-                self._total_cost = getattr(self, "_total_cost", 0.0) + iteration_cost
+                with self._usage_lock:
+                    self._total_usage = self._total_usage + response.usage
+                    iteration_cost = self._estimate_cost(response.usage, response.model or "")
+                    self._total_cost += iteration_cost
 
                 if (
                     self.config.max_tokens_limit is not None
@@ -1108,6 +1137,10 @@ class Agent:
                     )
 
                 if response.has_tool_calls:
+                    all_tool_calls.extend(response.tool_calls or [])
+                    if len(all_tool_calls) > self.config.max_tool_calls:
+                        raise AgentMaxIterationsError(self.name, self.config.max_tool_calls)
+
                     messages.append(
                         Message.assistant(content=response.content, tool_calls=response.tool_calls)
                     )
