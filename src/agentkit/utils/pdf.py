@@ -17,7 +17,7 @@ from agentkit.core.tools import tool
 
 
 @tool
-def read_pdf(file_path: str, max_pages: int | None = None) -> str:
+async def read_pdf(file_path: str, max_pages: int | None = None) -> str:
     """
     Extract text from a PDF file.
 
@@ -30,19 +30,24 @@ def read_pdf(file_path: str, max_pages: int | None = None) -> str:
 
     if not Path(file_path).exists():
         return f"Error: File not found: {file_path}"
+        
+    import asyncio
 
-    try:
-        doc = fitz.open(file_path)
-        text_parts = []
+    def _extract() -> str:
+        try:
+            doc = fitz.open(file_path)
+            text_parts = []
 
-        num_pages = len(doc)
-        if max_pages:
-            num_pages = min(num_pages, max_pages)
+            num_pages = len(doc)
+            if max_pages:
+                num_pages = min(num_pages, max_pages)
 
-        for i in range(num_pages):
-            page = doc.load_page(i)
-            text_parts.append(f"--- Page {i + 1} ---\n" + page.get_text())
+            for i in range(num_pages):
+                page = doc.load_page(i)
+                text_parts.append(f"--- Page {i + 1} ---\n" + page.get_text())
 
-        return "\n\n".join(text_parts)
-    except Exception as e:
-        return f"Error reading PDF: {e!s}"
+            return "\n\n".join(text_parts)
+        except Exception as e:
+            return f"Error reading PDF: {e!s}"
+            
+    return await asyncio.to_thread(_extract)

@@ -83,7 +83,7 @@ def _load_tools(agent: Any, tools_file: str) -> None:
         for name in dir(module):
             obj = getattr(module, name)
             if callable(obj) and (name.startswith("tool_") or getattr(obj, "_is_tool", False)):
-                agent.tool(obj)
+                agent.add_tool(obj)
 
 
 def _run_streaming(agent: Any, prompt: str) -> None:

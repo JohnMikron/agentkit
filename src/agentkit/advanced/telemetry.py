@@ -41,7 +41,7 @@ class OpenTelemetryHook:
             )
         self.tracer: Tracer = trace.get_tracer(tracer_name)
 
-        self._active_spans: dict[str, Span] = {}
+        self._active_spans: dict[str, list[Span]] = {}
         self._active_tool_spans: dict[str, list[Span]] = {}
 
     def attach(self, agent: Agent) -> None:
@@ -55,40 +55,58 @@ class OpenTelemetryHook:
         agent.on_tool_call_end(self.on_tool_call_end)
 
     def on_agent_start(self, event: Event) -> None:
-        span = self.tracer.start_span(f"AgentRunner.{event.agent_name}")
-        span.set_attribute("agent.name", event.agent_name)
+        agent_name = event.agent_name or "unknown"
+        span = self.tracer.start_span(f"AgentRunner.{agent_name}")
+        span.set_attribute("agent.name", agent_name)
         if "prompt" in event.data:
             span.set_attribute("agent.prompt", event.data["prompt"])
-        self._active_spans["agent"] = span
+        
+        key = f"agent_{id(event.source)}" if event.source else "agent"
+        if key not in self._active_spans:
+            self._active_spans[key] = []
+        self._active_spans[key].append(span)
 
     def on_agent_end(self, event: Event) -> None:
-        span = self._active_spans.get("agent")
-        if span:
+        key = f"agent_{id(event.source)}" if event.source else "agent"
+        if key in self._active_spans and self._active_spans[key]:
+            span = self._active_spans[key].pop()
             span.set_attribute("agent.iterations", event.data.get("iterations", 0))
             span.set_status(Status(StatusCode.OK))
             span.end()
-            self._active_spans.pop("agent", None)
+            
+            if not self._active_spans[key]:
+                del self._active_spans[key]
 
     def on_agent_error(self, event: Event) -> None:
-        span = self._active_spans.get("agent")
-        if span:
+        key = f"agent_{id(event.source)}" if event.source else "agent"
+        if key in self._active_spans and self._active_spans[key]:
+            span = self._active_spans[key].pop()
             span.record_exception(Exception(event.data.get("error", "Unknown Error")))
             span.set_status(Status(StatusCode.ERROR))
             span.end()
-            self._active_spans.pop("agent", None)
+            
+            if not self._active_spans[key]:
+                del self._active_spans[key]
 
     def on_llm_request(self, event: Event) -> None:
         span = self.tracer.start_span("LLM.Complete")
         span.set_attribute("llm.iteration", event.data.get("iteration", 0))
-        self._active_spans["llm"] = span
+        
+        key = f"llm_{id(event.source)}" if event.source else "llm"
+        if key not in self._active_spans:
+            self._active_spans[key] = []
+        self._active_spans[key].append(span)
 
     def on_llm_response(self, event: Event) -> None:
-        span = self._active_spans.get("llm")
-        if span:
+        key = f"llm_{id(event.source)}" if event.source else "llm"
+        if key in self._active_spans and self._active_spans[key]:
+            span = self._active_spans[key].pop()
             span.set_attribute("llm.has_tools", event.data.get("has_tool_calls", False))
             span.set_status(Status(StatusCode.OK))
             span.end()
-            self._active_spans.pop("llm", None)
+            
+            if not self._active_spans[key]:
+                del self._active_spans[key]
 
     def on_tool_call_start(self, event: Event) -> None:
         tool_name = event.data.get("tool_name", "unknown")

@@ -211,6 +211,8 @@ Respond with ONLY the category name, nothing else."""
     def _determine_routes(self, input: str) -> list[Route]:
         """Determine which routes to use based on strategy."""
         if self.strategy == RouteStrategy.LLM:
+            import warnings
+            warnings.warn("LLM strategy in _determine_routes is synchronous but uses async classification. Use arun().")
             return self._route_keyword(input)
         
         if self.strategy == RouteStrategy.ALL:
@@ -280,6 +282,8 @@ Respond with ONLY the category name, nothing else."""
                 name, result = item
                 results[name] = result
                 routed_to.append(name)
+                if not result.success:
+                    errors.append(result.error or "Unknown error")
 
         # Aggregate outputs if configured
         final_output = ""

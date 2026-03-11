@@ -19,9 +19,9 @@ Example:
 
 from agentkit.core.agent import Agent, AgentConfig
 from agentkit.core.exceptions import AgentKitError
+from agentkit.core.types import AgentResult, Message, Role, ToolDefinition, ToolResult
 from agentkit.core.memory import InMemoryStorage, Memory, SQLiteStorage, VectorStorage
 from agentkit.core.tools import Tool, tool
-from agentkit.core.types import Message, Role, ToolDefinition, ToolResult
 from agentkit.orchestration.web import WebAgent
 from agentkit.providers import (
     AnthropicProvider,
@@ -32,10 +32,13 @@ from agentkit.providers import (
     OpenAIProvider,
 )
 from agentkit.providers.mock import MockProvider
-from agentkit.providers.mock import MockProvider
-from agentkit.advanced.telemetry import OpenTelemetryHook
 
-__version__ = "1.2.0"
+try:
+    from agentkit.advanced.telemetry import OpenTelemetryHook
+except ImportError:
+    pass
+
+__version__ = "2.0.0"
 __author__ = "AgentKit Team"
 __all__ = [
     # Core

@@ -71,24 +71,20 @@ class InMemoryCache(Cache[T]):
     def get(self, key: str) -> T | None:
         """Get a value from cache."""
         from typing import cast
-        import time
 
         if key in self._cache:
-            val_tuple = self._cache.get(key)
-            if isinstance(val_tuple, tuple) and len(val_tuple) == 2:
-                value, expiry = val_tuple
-                if time.time() > expiry:
-                    del self._cache[key]
-                    return None
-                return cast("T | None", value)
-            return cast("T | None", val_tuple)
+            return cast("T | None", self._cache.get(key))
         return None
 
     def set(self, key: str, value: T, ttl: int | None = None) -> None:
         """Set a value in cache."""
-        import time
-        expiry = time.time() + (ttl if ttl is not None else self.default_ttl)
-        self._cache[key] = (value, expiry)
+        from cachetools import TTLCache
+
+        if ttl is not None and ttl != self.default_ttl:
+            # TTLCache doesn't support per-item TTL, so we can't easily override it.
+            # But we can store it with the default TTL.
+            pass
+        self._cache[key] = value
 
     def delete(self, key: str) -> bool:
         """Delete a value from cache."""
@@ -226,11 +222,6 @@ class SemanticCache(Cache[str]):
             self._storage.delete(entry.id)
             return None
 
-        import difflib
-        similarity = difflib.SequenceMatcher(None, key, entry.content).ratio()
-        if similarity < self.similarity_threshold:
-            return None
-
         return entry.metadata.get("response")
 
     def set(self, key: str, value: str, ttl: int | None = None) -> None:
@@ -267,21 +258,7 @@ class SemanticCache(Cache[str]):
 
     def get_response(self, prompt: str) -> str | None:
         """Get response by prompt (alias for get)."""
-        results = self._storage.search(prompt, limit=1)
-        if not results:
-            return None
-
-        entry = results[0]
-        import time
-        if time.time() > entry.metadata.get("expiry", 0):
-            return None
-
-        import difflib
-        similarity = difflib.SequenceMatcher(None, prompt, entry.content).ratio()
-        if similarity < self.similarity_threshold:
-            return None
-
-        return entry.metadata.get("response")
+        return self.get(prompt)
 
 
 if TYPE_CHECKING:

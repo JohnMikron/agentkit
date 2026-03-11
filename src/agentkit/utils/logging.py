@@ -20,7 +20,7 @@ from rich.logging import RichHandler
 
 def setup_logging(
     level: str = "INFO",
-    format: str = "json",
+    log_format: str = "json",
     log_file: str | None = None,
     rich_tracebacks: bool = True,
 ) -> None:
@@ -29,7 +29,7 @@ def setup_logging(
 
     Args:
         level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        format: Output format ('json' or 'text')
+        log_format: Output format ('json' or 'text')
         log_file: Optional file path for logging
         rich_tracebacks: Whether to use rich tracebacks in text mode
     """
@@ -47,7 +47,7 @@ def setup_logging(
     ]
 
     processors: list[Any]
-    if format == "json":
+    if log_format == "json":
         # JSON format for production
         processors = [
             *shared_processors,
@@ -75,7 +75,7 @@ def setup_logging(
         root_logger.removeHandler(handler)
 
     # Add console handler
-    if format == "text":
+    if log_format == "text":
         # Use Rich handler for pretty output
         console = Console(stderr=True)
         handler = RichHandler(
