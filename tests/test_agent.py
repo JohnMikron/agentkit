@@ -13,7 +13,7 @@ class TestAgentCreation:
         """Test creating a basic agent."""
         agent = Agent("test")
         assert agent.name == "test"
-        assert agent.config.model == "gpt-5.3-chat-latest"
+        assert agent.config.model == "gpt-5.4"
         assert len(agent.tools) == 0
 
     def test_with_custom_model(self):
@@ -178,7 +178,7 @@ class TestAgentConfig:
         """Test default configuration values."""
         config = AgentConfig()
         assert config.name == "agent"
-        assert config.model == "gpt-5.3-chat-latest"
+        assert config.model == "gpt-5.4"
         assert config.temperature == 0.7
         assert config.max_iterations == 10
 

@@ -163,7 +163,7 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(default="agent", min_length=1, max_length=100)
-    model: str = Field(default="gpt-5.3-chat-latest")
+    model: str = Field(default="gpt-5.4")
     provider: str = Field(default="openai")
     system_prompt: str | None = Field(default=None)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
@@ -244,7 +244,7 @@ class Agent:
         else:
             self.config = AgentConfig(
                 name=name,
-                model=model or kwargs.get("model", "gpt-5.3-chat-latest"),
+                model=model or kwargs.get("model", "gpt-5.4"),
                 system_prompt=system_prompt or kwargs.get("system_prompt"),
                 memory_enabled=memory or kwargs.get("memory_enabled", False),
                 **{k: v for k, v in kwargs.items() if k in AgentConfig.model_fields},

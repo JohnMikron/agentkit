@@ -395,22 +395,34 @@ class ModelId(str, Enum):
     """Supported model identifiers."""
 
     # OpenAI
+    GPT_5_4 = "gpt-5.4"
+    GPT_5_4_PRO = "gpt-5.4-pro"
+    GPT_5_3_INSTANT = "gpt-5.3-instant"
+    GPT_5_3_CODEX = "gpt-5.3-codex"
     GPT_4O = "gpt-4o"
     GPT_4O_MINI = "gpt-4o-mini"
     O1 = "o1"
-    O1_MINI = "o1-mini"
     O3_MINI = "o3-mini"
 
     # Anthropic
+    CLAUDE_4_6_OPUS = "claude-4-6-opus-latest"
+    CLAUDE_4_6_SONNET = "claude-4-6-sonnet-latest"
+    CLAUDE_4_5_HAIKU = "claude-4-5-haiku-latest"
     CLAUDE_3_5_SONNET = "claude-3-5-sonnet-latest"
     CLAUDE_3_5_HAIKU = "claude-3-5-haiku-latest"
     CLAUDE_3_7_SONNET = "claude-3-7-sonnet-latest"
 
     # Google
+    GEMINI_3_1_PRO = "gemini-3.1-pro"
+    GEMINI_3_FLASH = "gemini-3-flash"
+    GEMINI_3_1_FLASH_LITE = "gemini-3.1-flash-lite"
     GEMINI_2_PRO = "gemini-2.5-pro"
     GEMINI_2_FLASH = "gemini-2.5-flash"
 
     # Mistral
+    MISTRAL_LARGE_3 = "mistral-large-3"
+    MAGISTRAL_1_2 = "magistral-1.2"
+    DEVSTRAL_2 = "devstral-2"
     MISTRAL_LARGE = "mistral-large-latest"
     MISTRAL_SMALL = "mistral-small-latest"
     CODESTRAL = "codestral-latest"
