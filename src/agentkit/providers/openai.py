@@ -328,11 +328,23 @@ class OpenAIProvider(LLMProvider):
 
     def __del__(self) -> None:
         """Clean up HTTP clients."""
-        # Note: We can't easily clean up async client in __del__
-        # It should rely on garbage collection
         if hasattr(self, "_client"):
-            self._client.close()
+            try:
+                self._client.close()
+            except Exception:
+                pass
+
         if hasattr(self, "_async_client"):
-            # Note: Close is async, cannot comfortably await in __del__
-            # but httpx handles most cleanup if already closed or during gc
-            pass
+            try:
+                import asyncio
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    if loop.is_running():
+                        loop.create_task(self._async_client.aclose())
+                except RuntimeError:
+                    # No running loop, try to use run_until_complete if possible
+                    # or just rely on gc if we can't get a loop
+                    pass
+            except Exception:
+                pass

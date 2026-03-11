@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import time
+import json
+import tenacity
+from jinja2 import Template
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -264,8 +267,6 @@ class Workflow:
 
     def _render_prompt(self, template: str, context: SharedState) -> str:
         """Render a Jinja2 template with context."""
-        from jinja2 import Template
-
         tmpl = Template(template)
         kwargs = context.model_dump()
         if hasattr(context, "__pydantic_extra__") and context.__pydantic_extra__:
@@ -323,6 +324,8 @@ class Workflow:
             step.status = StepStatus.PENDING
             step.result = None
             step.attempts = 0
+            if isinstance(step, ParallelStep):
+                step.results = {}
 
         initial_context = SharedState()
         if context:
@@ -371,7 +374,6 @@ class Workflow:
 
                 # Execute agent with retries using tenacity
                 result = None
-                import tenacity
 
                 try:
                     async for attempt in tenacity.AsyncRetrying(
@@ -409,8 +411,6 @@ class Workflow:
                                         else:
                                             combined_content[key] = r.content
                                             step.results[key] = r
-
-                                    import json
 
                                     result = AgentResult(
                                         success=not has_failure,

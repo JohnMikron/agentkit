@@ -339,4 +339,20 @@ class AnthropicProvider(LLMProvider):
     def __del__(self) -> None:
         """Clean up HTTP clients."""
         if hasattr(self, "_client"):
-            self._client.close()
+            try:
+                self._client.close()
+            except Exception:
+                pass
+
+        if hasattr(self, "_async_client"):
+            try:
+                import asyncio
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    if loop.is_running():
+                        loop.create_task(self._async_client.aclose())
+                except RuntimeError:
+                    pass
+            except Exception:
+                pass

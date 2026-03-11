@@ -216,6 +216,16 @@ class MistralProvider(LLMProvider):
             headers=self._headers(),
             json=body,
         ) as response:
+            if response.status_code == 401:
+                raise ProviderAuthenticationError("mistral", "Invalid API key")
+            elif response.status_code == 429:
+                raise ProviderRateLimitError("mistral")
+            elif response.status_code != 200:
+                raise ProviderError(
+                    f"Mistral API error: {response.text}",
+                    provider="mistral",
+                    details={"status_code": response.status_code},
+                )
             for line in response.iter_lines():
                 if line.startswith("data: "):
                     data = line[6:]
@@ -245,6 +255,16 @@ class MistralProvider(LLMProvider):
             headers=self._headers(),
             json=body,
         ) as response:
+            if response.status_code == 401:
+                raise ProviderAuthenticationError("mistral", "Invalid API key")
+            elif response.status_code == 429:
+                raise ProviderRateLimitError("mistral")
+            elif response.status_code != 200:
+                raise ProviderError(
+                    f"Mistral API error: {response.text}",
+                    provider="mistral",
+                    details={"status_code": response.status_code},
+                )
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
                     data = line[6:]
@@ -261,4 +281,20 @@ class MistralProvider(LLMProvider):
     def __del__(self) -> None:
         """Clean up HTTP clients."""
         if hasattr(self, "_client"):
-            self._client.close()
+            try:
+                self._client.close()
+            except Exception:
+                pass
+
+        if hasattr(self, "_async_client"):
+            try:
+                import asyncio
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    if loop.is_running():
+                        loop.create_task(self._async_client.aclose())
+                except RuntimeError:
+                    pass
+            except Exception:
+                pass

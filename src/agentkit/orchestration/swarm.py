@@ -69,6 +69,8 @@ class Swarm:
         self.max_hops = max_hops
         self.timeout = timeout
         self._agents: dict[str, Agent] = {}
+        import threading
+        self._lock = threading.Lock()
 
     def add_agent(self, agent: Agent) -> Swarm:
         """
@@ -76,22 +78,23 @@ class Swarm:
         This automatically gives the agent the ability to transfer
         to any other currently registered agent in the swarm.
         """
-        if agent.name in self._agents:
-            return self
+        with self._lock:
+            if agent.name in self._agents:
+                return self
 
-        # 1. Existing agents get a tool to transfer to the new agent
-        for existing_name, existing_agent in self._agents.items():
-            tool_name = f"transfer_to_{agent.name}"
-            existing_agent.tools = [t for t in existing_agent.tools if t.name != tool_name]
-            existing_agent.add_tool(self._make_transfer_tool(agent.name))
+            # 1. Existing agents get a tool to transfer to the new agent
+            for existing_name, existing_agent in self._agents.items():
+                tool_name = f"transfer_to_{agent.name}"
+                existing_agent.tools = [t for t in existing_agent.tools if t.name != tool_name]
+                existing_agent.add_tool(self._make_transfer_tool(agent.name))
 
-        # 2. The new agent gets tools to transfer to all existing agents
-        for existing_name in self._agents.keys():
-            tool_name = f"transfer_to_{existing_name}"
-            agent.tools = [t for t in agent.tools if t.name != tool_name]
-            agent.add_tool(self._make_transfer_tool(existing_name))
+            # 2. The new agent gets tools to transfer to all existing agents
+            for existing_name in self._agents.keys():
+                tool_name = f"transfer_to_{existing_name}"
+                agent.tools = [t for t in agent.tools if t.name != tool_name]
+                agent.add_tool(self._make_transfer_tool(existing_name))
 
-        self._agents[agent.name] = agent
+            self._agents[agent.name] = agent
         return self
 
     def _make_transfer_tool(self, target: str) -> Tool:
@@ -166,9 +169,14 @@ class Swarm:
                         target_name = tr.name[12:]
                         if target_name in self._agents:
                             transfer_target = target_name
-                            # The context is usually in the arguments or the result content
+                            
+                            # Extract context from raw_result if it's a TransferTarget
+                            ctx = tr.content
+                            if hasattr(tr, "raw_result") and isinstance(tr.raw_result, TransferTarget):
+                                ctx = tr.raw_result.context
+
                             current_input = (
-                                f"Transferred from {current_agent.name}. Context: {tr.content}"
+                                f"Transferred from {current_agent.name}. Context: {ctx}"
                             )
                             break
 

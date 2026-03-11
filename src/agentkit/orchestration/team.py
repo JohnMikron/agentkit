@@ -96,7 +96,7 @@ class Team:
         self.name = name
         self.config = config or TeamConfig(name=name)
 
-        self._agents: dict[str, TeamAgentConfig] = {}
+        self._agents: dict[str, AgentConfig] = {}
         self._leader: Agent | None = None
 
     def add_agent(
@@ -111,7 +111,7 @@ class Team:
 
         Returns self for chaining.
         """
-        self._agents[agent.name] = TeamAgentConfig(
+        self._agents[agent.name] = AgentConfig(
             agent=agent,
             role=role,
             weight=weight,
@@ -245,7 +245,7 @@ class Team:
         errors: list[str] = []
 
         # Create tasks for all agents
-        async def run_agent(cfg: TeamAgentConfig) -> tuple[str, AgentResult]:
+        async def run_agent(cfg: AgentConfig) -> tuple[str, AgentResult]:
             try:
                 result = await cfg.agent.arun(task, **kwargs)
                 return cfg.agent.name, result
@@ -258,7 +258,7 @@ class Team:
         # Run in parallel with semaphore
         semaphore = asyncio.Semaphore(self.config.max_parallel)
 
-        async def bounded_run(cfg: TeamAgentConfig) -> tuple[str, AgentResult]:
+        async def bounded_run(cfg: AgentConfig) -> tuple[str, AgentResult]:
             async with semaphore:
                 return await run_agent(cfg)
 
@@ -335,14 +335,14 @@ Create a JSON list of subtasks with assigned workers:
         # Distribute subtasks to workers
         workers = {a.name: a for a in self.get_agents(TeamRole.WORKER)}
 
-        for subtask in subtasks:
+        for i, subtask in enumerate(subtasks):
             worker_name = subtask.get("worker", "")
             subtask_desc = subtask.get("task", "")
 
             if worker_name in workers:
                 try:
                     result = await workers[worker_name].arun(subtask_desc, **kwargs)
-                    results[worker_name] = result
+                    results[f"{worker_name}_{i}"] = result
                     total_iterations += result.iterations
                 except Exception as e:
                     errors.append(f"Worker {worker_name} error: {e!s}")

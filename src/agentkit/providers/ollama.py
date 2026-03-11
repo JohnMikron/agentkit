@@ -345,4 +345,21 @@ class OllamaProvider(LLMProvider):
 
     def __del__(self) -> None:
         """Clean up HTTP clients."""
-        self._client.close()
+        if hasattr(self, "_client"):
+            try:
+                self._client.close()
+            except Exception:
+                pass
+
+        if hasattr(self, "_async_client"):
+            try:
+                import asyncio
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    if loop.is_running():
+                        loop.create_task(self._async_client.aclose())
+                except RuntimeError:
+                    pass
+            except Exception:
+                pass

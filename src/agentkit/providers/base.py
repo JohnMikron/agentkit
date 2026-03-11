@@ -122,7 +122,7 @@ class LLMProvider(ABC):
         pass
 
     @abstractmethod
-    def astream(
+    async def astream(
         self,
         messages: list[Message],
         tools: list[ToolDefinition] | None = None,

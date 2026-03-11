@@ -110,7 +110,7 @@ class GoogleProvider(LLMProvider):
                         "parts": [
                             {
                                 "functionResponse": {
-                                    "name": msg.name,
+                                    "name": msg.name or "unknown_function",
                                     "response": {"result": msg.content},
                                 }
                             }
@@ -184,7 +184,7 @@ class GoogleProvider(LLMProvider):
                 fc = part["functionCall"]
                 tool_calls.append(
                     ToolCall(
-                        id=f"call_{uuid.uuid4().hex[:24]}",
+                        id=f"call_{len(tool_calls)}_{fc.get('name', '')}",
                         name=fc.get("name", ""),
                         arguments=json.dumps(fc.get("args", {})),
                     )
@@ -295,7 +295,17 @@ class GoogleProvider(LLMProvider):
             params={"key": self.api_key},
             json=body,
         ) as response:
-            response.raise_for_status()
+            if response.status_code == 401:
+                raise ProviderAuthenticationError("google", "Invalid API key")
+            elif response.status_code == 429:
+                raise ProviderRateLimitError("google")
+            elif response.status_code != 200:
+                raise ProviderError(
+                    f"Google AI API error: {response.text}",
+                    provider="google",
+                    details={"status_code": response.status_code},
+                )
+
             for line in response.iter_lines():
                 if line.startswith("data: "):
                     try:
@@ -322,7 +332,17 @@ class GoogleProvider(LLMProvider):
             params={"key": self.api_key},
             json=body,
         ) as response:
-            response.raise_for_status()
+            if response.status_code == 401:
+                raise ProviderAuthenticationError("google", "Invalid API key")
+            elif response.status_code == 429:
+                raise ProviderRateLimitError("google")
+            elif response.status_code != 200:
+                raise ProviderError(
+                    f"Google AI API error: {response.text}",
+                    provider="google",
+                    details={"status_code": response.status_code},
+                )
+
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
                     try:
@@ -337,4 +357,20 @@ class GoogleProvider(LLMProvider):
     def __del__(self) -> None:
         """Clean up HTTP clients."""
         if hasattr(self, "_client"):
-            self._client.close()
+            try:
+                self._client.close()
+            except Exception:
+                pass
+
+        if hasattr(self, "_async_client"):
+            try:
+                import asyncio
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    if loop.is_running():
+                        loop.create_task(self._async_client.aclose())
+                except RuntimeError:
+                    pass
+            except Exception:
+                pass
